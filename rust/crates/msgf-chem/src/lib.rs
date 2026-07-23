@@ -8,6 +8,8 @@
 //! Ground truth for this crate lives in `validation/golden/chemistry/` and is exercised by
 //! `tests/golden_chemistry.rs`. The golden itself is guarded against published peptide calibrants.
 
+pub mod peptide;
+
 /// Monoisotopic masses of the most-abundant isotope (CODATA/AME-2020), plus derived constants.
 pub mod mass {
     pub const H: f64 = 1.007_825_031_9;
