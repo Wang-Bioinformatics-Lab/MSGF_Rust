@@ -11,6 +11,7 @@
 //!
 //! Per-node spectrum scoring (RawScore) is built on top of this model next.
 
+pub mod preprocess;
 pub mod scored_spectrum;
 
 use msgf_chem::Tolerance;

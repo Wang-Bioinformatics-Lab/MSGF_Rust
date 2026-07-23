@@ -11,3 +11,4 @@ msgf-chem = { path = "../msgf-chem" }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+msgf-io = { path = "../msgf-io" }

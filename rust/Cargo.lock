@@ -94,6 +94,7 @@ name = "msgf-scorer"
 version = "0.1.0"
 dependencies = [
  "msgf-chem",
+ "msgf-io",
  "serde_json",
 ]
 
