@@ -38,6 +38,21 @@ pub struct FragOff {
     pub name: String,
 }
 
+impl FragOff {
+    /// Theoretical m/z of this ion for a prefix/suffix residue mass, per `IonType.getMz`:
+    /// `residue_mass / charge + offset`.
+    #[inline]
+    pub fn mz(&self, residue_mass: f32) -> f32 {
+        residue_mass / self.charge as f32 + self.offset
+    }
+
+    /// Inverse of [`FragOff::mz`], per `IonType.getMass`: `(mz - offset) * charge`.
+    #[inline]
+    pub fn mass(&self, mz: f32) -> f32 {
+        (mz - self.offset) * self.charge as f32
+    }
+}
+
 /// A precursor offset-frequency entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrecursorOff {
@@ -451,5 +466,28 @@ mod tests {
         assert_eq!(java_round(1.9918417), 2);
         assert_eq!(java_round(-26.98709), -27);
         assert_eq!(java_round(1.007825), 1);
+    }
+
+    #[test]
+    fn frag_ion_mz_and_roundtrip() {
+        // b1 ion (charge 1, proton offset): mz = residueMass + proton
+        let b = FragOff {
+            is_prefix: true,
+            charge: 1,
+            offset: 1.007825,
+            frequency: 0.1,
+            name: "P_1_1".into(),
+        };
+        assert!((b.mz(226.095_36) - 227.103_18).abs() < 1e-3);
+        // charge-2 round trip
+        let d = FragOff {
+            is_prefix: false,
+            charge: 2,
+            offset: 1.5,
+            frequency: 0.1,
+            name: "S_2_2".into(),
+        };
+        assert!((d.mz(200.0) - 101.5).abs() < 1e-6);
+        assert!((d.mass(d.mz(200.0)) - 200.0).abs() < 1e-4);
     }
 }

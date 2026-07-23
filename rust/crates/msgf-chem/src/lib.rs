@@ -30,21 +30,30 @@ pub mod mass {
 /// `nominal` is the low-res grid (~1 bin/Da); `high_precision` is the high-res grid (~274
 /// bins/Da, ~0.0036 Da) — the finer grid is why high-res MSGF is expensive and is the hot path
 /// the Rust port optimizes.
+// Constants mirror MS-GF+'s `float` literals (Constants.java); keep the full digits for
+// traceability even though f32 can't distinguish them all.
+#[allow(clippy::excessive_precision)]
 pub mod scaling {
-    /// `INTEGER_MASS_SCALER` — low-resolution / nominal mass.
-    pub const NOMINAL: f64 = 0.999_497;
+    /// `INTEGER_MASS_SCALER` — low-resolution / nominal mass. `f32` to match MS-GF+ exactly.
+    pub const NOMINAL: f32 = 0.999_497;
     /// `INTEGER_MASS_SCALER_HIGH_PRECISION` — high-resolution mass.
-    pub const HIGH_PRECISION: f64 = 274.335_215;
+    pub const HIGH_PRECISION: f32 = 274.335_215;
 
-    /// Discretize a real mass onto the nominal (low-res) integer grid.
+    /// Real mass → nominal integer, per `NominalMass.toNominalMass`: `round(mass * NOMINAL)`.
     #[inline]
-    pub fn nominal_bin(mass: f64) -> i32 {
+    pub fn nominal_bin(mass: f32) -> i32 {
         (mass * NOMINAL).round() as i32
     }
 
-    /// Discretize a real mass onto the high-precision (high-res) integer grid.
+    /// Nominal integer → representative real mass, per `NominalMass.getMass`: `nominal / NOMINAL`.
     #[inline]
-    pub fn high_res_bin(mass: f64) -> i32 {
+    pub fn nominal_to_mass(nominal: i32) -> f32 {
+        nominal as f32 / NOMINAL
+    }
+
+    /// Real mass → high-precision (high-res) integer bin.
+    #[inline]
+    pub fn high_res_bin(mass: f32) -> i32 {
         (mass * HIGH_PRECISION).round() as i32
     }
 }
@@ -241,5 +250,13 @@ mod tests {
         // ~274 bins per Da vs ~1 bin per Da
         assert_eq!(scaling::nominal_bin(1000.0), 999);
         assert!(scaling::high_res_bin(1000.0) > 274_000);
+    }
+
+    #[test]
+    fn nominal_mass_conversion() {
+        // matches Java NominalMass: toNominalMass then getMass round-trips closely
+        let nm = scaling::nominal_bin(1234.567);
+        approx(scaling::nominal_to_mass(nm) as f64, 1234.567, 1.0);
+        assert_eq!(scaling::nominal_bin(57.02146), 57); // glycine residue -> nominal 57
     }
 }
