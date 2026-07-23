@@ -1,0 +1,13 @@
+[package]
+name = "msgf-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Spectrum types and format readers (MGF; mzML later) for MSGF_Rust"
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+sha1 = { workspace = true }

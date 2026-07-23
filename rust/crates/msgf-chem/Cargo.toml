@@ -1,0 +1,12 @@
+[package]
+name = "msgf-chem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Masses, residues, peptides, fragment ions, tolerance, and mass discretization for MSGF_Rust"
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { workspace = true }

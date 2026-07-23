@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/msgf-chem",
+    "crates/msgf-io",
+    "crates/msgf-scorer",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["MSGF_Rust contributors"]
+repository = "https://github.com/mwang87/MSGF_Rust"
+
+# NOTE: our Rust code is MIT. The reference MS-GF+ models/data are UC-licensed and are NOT
+# vendored here (see ../validation/README.md). Validation golden JSON is derived numeric facts.
+
+[workspace.dependencies]
+serde_json = "1"
+sha1 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

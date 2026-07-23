@@ -1,0 +1,13 @@
+[package]
+name = "msgf-scorer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MS-GF+ scoring model (.param) reader and (later) per-node spectrum scoring for MSGF_Rust"
+
+[dependencies]
+msgf-chem = { path = "../msgf-chem" }
+
+[dev-dependencies]
+serde_json = { workspace = true }

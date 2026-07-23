@@ -1,0 +1,109 @@
+{
+  "file": "tiny.pwiz.mzML",
+  "format": "mzML",
+  "n_spectra": 4,
+  "total_peaks": 40,
+  "rolling_peak_sha1": "c1ccb163f2df9200cd01da1c91609fa98b726f47",
+  "stored_full": 4,
+  "compare": {
+    "per_spectrum": "exact",
+    "note": "n_peaks/charge/precursor_mz exact; peaks_sha1 must match canonical format"
+  },
+  "spectra": [
+    {
+      "index": 0,
+      "title": "scan=19",
+      "scan": "19",
+      "charge": null,
+      "precursor_mz": null,
+      "n_peaks": 15,
+      "mz_min": 0.0,
+      "mz_max": 14.0,
+      "base_peak_mz": 0.0,
+      "tic": 120.0,
+      "first3_peaks": [
+        [
+          0.0,
+          15.0
+        ],
+        [
+          1.0,
+          14.0
+        ],
+        [
+          2.0,
+          13.0
+        ]
+      ],
+      "peaks_sha1": "8c0cf0dc84ee84c6126d346df34543dcfb894560"
+    },
+    {
+      "index": 1,
+      "title": "scan=20",
+      "scan": "20",
+      "charge": 2,
+      "precursor_mz": null,
+      "n_peaks": 10,
+      "mz_min": 0.0,
+      "mz_max": 18.0,
+      "base_peak_mz": 0.0,
+      "tic": 110.0,
+      "first3_peaks": [
+        [
+          0.0,
+          20.0
+        ],
+        [
+          2.0,
+          18.0
+        ],
+        [
+          4.0,
+          16.0
+        ]
+      ],
+      "peaks_sha1": "8e97b83d2300d44c9580670cbd51c9758075ee14"
+    },
+    {
+      "index": 2,
+      "title": "scan=21",
+      "scan": "21",
+      "charge": null,
+      "precursor_mz": null,
+      "n_peaks": 0,
+      "mz_min": null,
+      "mz_max": null,
+      "base_peak_mz": null,
+      "tic": 0,
+      "first3_peaks": [],
+      "peaks_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    },
+    {
+      "index": 3,
+      "title": "scan=22",
+      "scan": "22",
+      "charge": null,
+      "precursor_mz": null,
+      "n_peaks": 15,
+      "mz_min": 0.0,
+      "mz_max": 14.0,
+      "base_peak_mz": 0.0,
+      "tic": 120.0,
+      "first3_peaks": [
+        [
+          0.0,
+          15.0
+        ],
+        [
+          1.0,
+          14.0
+        ],
+        [
+          2.0,
+          13.0
+        ]
+      ],
+      "peaks_sha1": "8c0cf0dc84ee84c6126d346df34543dcfb894560"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# Rust build output
+/rust/target/
+**/*.rs.bk
+
+# Python bytecode (golden generators / harness)
+__pycache__/
+*.pyc
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+
+# Note: validation/ has its own .gitignore for the (UC-licensed) reference data.

@@ -1,0 +1,4064 @@
+{
+  "file": "test.mgf",
+  "format": "mgf",
+  "n_spectra": 5760,
+  "total_peaks": 2660500,
+  "rolling_peak_sha1": "617e27d08fc5b7bb11f18de617f62fe85b1e7f95",
+  "stored_full": 150,
+  "compare": {
+    "per_spectrum": "exact",
+    "note": "n_peaks/charge/precursor_mz exact; peaks_sha1 must match canonical format"
+  },
+  "spectra": [
+    {
+      "index": 0,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=41",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 472.282562255859,
+      "n_peaks": 71,
+      "mz_min": 208.258,
+      "mz_max": 851.498,
+      "base_peak_mz": 454.026,
+      "tic": 1007.418,
+      "first3_peaks": [
+        [
+          455.793,
+          8.121
+        ],
+        [
+          700.543,
+          6.621
+        ],
+        [
+          396.035,
+          10.566
+        ]
+      ],
+      "peaks_sha1": "846d832da91544ed15083de93dc85557b3a562d9"
+    },
+    {
+      "index": 1,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=136",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 419.316864013672,
+      "n_peaks": 72,
+      "mz_min": 127.273,
+      "mz_max": 815.069,
+      "base_peak_mz": 402.057,
+      "tic": 1238.02,
+      "first3_peaks": [
+        [
+          301.271,
+          9.362
+        ],
+        [
+          346.015,
+          11.638
+        ],
+        [
+          355.921,
+          32.452
+        ]
+      ],
+      "peaks_sha1": "1367d8f2684efcb7f034edfb2d5fad312e6e663d"
+    },
+    {
+      "index": 2,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=190",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.253021240234,
+      "n_peaks": 83,
+      "mz_min": 111.087,
+      "mz_max": 1072.444,
+      "base_peak_mz": 299.287,
+      "tic": 1683.918,
+      "first3_peaks": [
+        [
+          280.934,
+          3.578
+        ],
+        [
+          399.963,
+          16.502
+        ],
+        [
+          336.399,
+          5.065
+        ]
+      ],
+      "peaks_sha1": "b4fe3f66f7e4b4d1268952b73edfa8abd5323165"
+    },
+    {
+      "index": 3,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=193",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 472.284576416016,
+      "n_peaks": 86,
+      "mz_min": 152.065,
+      "mz_max": 851.418,
+      "base_peak_mz": 463.346,
+      "tic": 1136.901,
+      "first3_peaks": [
+        [
+          463.346,
+          187.223
+        ],
+        [
+          298.384,
+          16.814
+        ],
+        [
+          367.455,
+          7.856
+        ]
+      ],
+      "peaks_sha1": "0c9775e7080c714b4ff20c1fb07bca733b9cc4b5"
+    },
+    {
+      "index": 4,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=217",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 419.316528320313,
+      "n_peaks": 63,
+      "mz_min": 123.177,
+      "mz_max": 702.447,
+      "base_peak_mz": 401.002,
+      "tic": 907.001,
+      "first3_peaks": [
+        [
+          221.384,
+          9.163
+        ],
+        [
+          346.294,
+          2.707
+        ],
+        [
+          334.785,
+          3.836
+        ]
+      ],
+      "peaks_sha1": "97fdb0354a441ba4545de7cfe1c3f9de45edb16a"
+    },
+    {
+      "index": 5,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=307",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.301635742188,
+      "n_peaks": 94,
+      "mz_min": 138.272,
+      "mz_max": 765.889,
+      "base_peak_mz": 366.999,
+      "tic": 1636.812,
+      "first3_peaks": [
+        [
+          341.955,
+          10.491
+        ],
+        [
+          364.234,
+          19.137
+        ],
+        [
+          357.911,
+          51.782
+        ]
+      ],
+      "peaks_sha1": "327f6de52f5d7e7ea76e676e1b3dabe4cc5e03ff"
+    },
+    {
+      "index": 6,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=312",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 398.927947998047,
+      "n_peaks": 87,
+      "mz_min": 101.12,
+      "mz_max": 775.938,
+      "base_peak_mz": 299.287,
+      "tic": 1757.215,
+      "first3_peaks": [
+        [
+          397.255,
+          6.546
+        ],
+        [
+          355.298,
+          23.42
+        ],
+        [
+          381.863,
+          55.83
+        ]
+      ],
+      "peaks_sha1": "7806664c02160e61f1a144074350c8ffe82bc126"
+    },
+    {
+      "index": 7,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=314",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 659.09716796875,
+      "n_peaks": 41,
+      "mz_min": 272.352,
+      "mz_max": 1301.74,
+      "base_peak_mz": 640.792,
+      "tic": 581.664,
+      "first3_peaks": [
+        [
+          623.779,
+          3.672
+        ],
+        [
+          590.891,
+          1.537
+        ],
+        [
+          659.71,
+          6.428
+        ]
+      ],
+      "peaks_sha1": "53a93612fb149d982ac05b87463a3c8fe065ca64"
+    },
+    {
+      "index": 8,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=386",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.25244140625,
+      "n_peaks": 83,
+      "mz_min": 129.45,
+      "mz_max": 797.299,
+      "base_peak_mz": 299.351,
+      "tic": 1351.081,
+      "first3_peaks": [
+        [
+          258.083,
+          2.732
+        ],
+        [
+          292.042,
+          2.265
+        ],
+        [
+          391.35,
+          44.26
+        ]
+      ],
+      "peaks_sha1": "af1f385f85bf5205928bad1f6288cab4370078fd"
+    },
+    {
+      "index": 9,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=425",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 472.285919189453,
+      "n_peaks": 71,
+      "mz_min": 209.242,
+      "mz_max": 899.796,
+      "base_peak_mz": 463.286,
+      "tic": 1248.021,
+      "first3_peaks": [
+        [
+          209.242,
+          4.466
+        ],
+        [
+          401.793,
+          4.296
+        ],
+        [
+          899.796,
+          5.335
+        ]
+      ],
+      "peaks_sha1": "6636701a50851aef5990aad538fee62eb275ea2f"
+    },
+    {
+      "index": 10,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=453",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 398.927154541016,
+      "n_peaks": 78,
+      "mz_min": 109.101,
+      "mz_max": 916.461,
+      "base_peak_mz": 299.268,
+      "tic": 1705.727,
+      "first3_peaks": [
+        [
+          324.459,
+          20.724
+        ],
+        [
+          599.349,
+          2.263
+        ],
+        [
+          354.076,
+          22.7
+        ]
+      ],
+      "peaks_sha1": "b3c0ce82ac46fcc0a170071e32fc11542ea75b03"
+    },
+    {
+      "index": 11,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=484",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 659.096862792969,
+      "n_peaks": 63,
+      "mz_min": 314.844,
+      "mz_max": 1258.553,
+      "base_peak_mz": 641.791,
+      "tic": 914.055,
+      "first3_peaks": [
+        [
+          401.32,
+          11.491
+        ],
+        [
+          1055.772,
+          7.23
+        ],
+        [
+          616.675,
+          15.301
+        ]
+      ],
+      "peaks_sha1": "afab46dcb3d6e9cd78a109b5ab650a2befa6f71e"
+    },
+    {
+      "index": 12,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=493",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 382.170593261719,
+      "n_peaks": 104,
+      "mz_min": 111.083,
+      "mz_max": 740.853,
+      "base_peak_mz": 373.423,
+      "tic": 1731.93,
+      "first3_peaks": [
+        [
+          283.296,
+          18.03
+        ],
+        [
+          281.833,
+          7.859
+        ],
+        [
+          320.382,
+          16.343
+        ]
+      ],
+      "peaks_sha1": "6725af5340902cabc4c17a918d5ad06701c9f6bd"
+    },
+    {
+      "index": 13,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=515",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.796264648438,
+      "n_peaks": 82,
+      "mz_min": 114.335,
+      "mz_max": 765.596,
+      "base_peak_mz": 377.009,
+      "tic": 1120.941,
+      "first3_peaks": [
+        [
+          336.219,
+          7.728
+        ],
+        [
+          302.163,
+          2.8
+        ],
+        [
+          256.897,
+          7.724
+        ]
+      ],
+      "peaks_sha1": "49a5a8a9c8c09bf682c4b08ac43a21b9ac9bb82d"
+    },
+    {
+      "index": 14,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=519",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.252624511719,
+      "n_peaks": 91,
+      "mz_min": 110.997,
+      "mz_max": 775.194,
+      "base_peak_mz": 299.224,
+      "tic": 1758.896,
+      "first3_peaks": [
+        [
+          372.899,
+          6.175
+        ],
+        [
+          325.032,
+          29.76
+        ],
+        [
+          304.046,
+          3.989
+        ]
+      ],
+      "peaks_sha1": "a7f8c62e4fcf95d9e9e3c87867fb6a9ad71c29ae"
+    },
+    {
+      "index": 15,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=551",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.802124023438,
+      "n_peaks": 99,
+      "mz_min": 209.889,
+      "mz_max": 1235.38,
+      "base_peak_mz": 611.844,
+      "tic": 1443.782,
+      "first3_peaks": [
+        [
+          730.63,
+          3.232
+        ],
+        [
+          297.124,
+          10.057
+        ],
+        [
+          561.894,
+          3.3
+        ]
+      ],
+      "peaks_sha1": "5f316d90c5c3f490b1e374d37efefa257aa71fba"
+    },
+    {
+      "index": 16,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=581",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 425.289611816406,
+      "n_peaks": 94,
+      "mz_min": 138.18,
+      "mz_max": 912.554,
+      "base_peak_mz": 407.124,
+      "tic": 1314.265,
+      "first3_peaks": [
+        [
+          315.196,
+          2.389
+        ],
+        [
+          323.197,
+          2.389
+        ],
+        [
+          295.128,
+          4.594
+        ]
+      ],
+      "peaks_sha1": "49bd1cd5ad6d66d086e61bc9f5bbfa15bee37aac"
+    },
+    {
+      "index": 17,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=597",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.25390625,
+      "n_peaks": 129,
+      "mz_min": 101.207,
+      "mz_max": 775.178,
+      "base_peak_mz": 299.25,
+      "tic": 3066.993,
+      "first3_peaks": [
+        [
+          377.95,
+          15.813
+        ],
+        [
+          269.543,
+          19.672
+        ],
+        [
+          323.964,
+          4.915
+        ]
+      ],
+      "peaks_sha1": "5f1fc1dda64cde22bfcdae9cf63065e89ae3d1cd"
+    },
+    {
+      "index": 18,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=610",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 488.241973876953,
+      "n_peaks": 103,
+      "mz_min": 198.983,
+      "mz_max": 851.361,
+      "base_peak_mz": 508.277,
+      "tic": 2180.368,
+      "first3_peaks": [
+        [
+          246.027,
+          6.024
+        ],
+        [
+          232.456,
+          8.386
+        ],
+        [
+          452.147,
+          18.007
+        ]
+      ],
+      "peaks_sha1": "c0bfccdf31a84fb12d24a944d9996af4608775d2"
+    },
+    {
+      "index": 19,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=616",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.800231933594,
+      "n_peaks": 80,
+      "mz_min": 204.153,
+      "mz_max": 1177.738,
+      "base_peak_mz": 620.963,
+      "tic": 1642.189,
+      "first3_peaks": [
+        [
+          1159.561,
+          17.031
+        ],
+        [
+          444.258,
+          4.27
+        ],
+        [
+          460.175,
+          2.0
+        ]
+      ],
+      "peaks_sha1": "5423a1703e0ddff954e2574b4c4f00e9eb66f11f"
+    },
+    {
+      "index": 20,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=622",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 365.728790283203,
+      "n_peaks": 145,
+      "mz_min": 123.218,
+      "mz_max": 604.479,
+      "base_peak_mz": 348.096,
+      "tic": 2420.435,
+      "first3_peaks": [
+        [
+          290.282,
+          7.033
+        ],
+        [
+          329.137,
+          17.261
+        ],
+        [
+          207.191,
+          6.476
+        ]
+      ],
+      "peaks_sha1": "5d467beb0524bab35ee6af3ea7a134cac44c657c"
+    },
+    {
+      "index": 21,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=643",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 379.6953125,
+      "n_peaks": 105,
+      "mz_min": 120.179,
+      "mz_max": 737.027,
+      "base_peak_mz": 294.676,
+      "tic": 2177.014,
+      "first3_peaks": [
+        [
+          497.108,
+          12.665
+        ],
+        [
+          481.31,
+          3.892
+        ],
+        [
+          467.705,
+          27.006
+        ]
+      ],
+      "peaks_sha1": "9e80c16de9bd51f2b4045491c505236cf8b2b615"
+    },
+    {
+      "index": 22,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=647",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.796813964844,
+      "n_peaks": 119,
+      "mz_min": 123.182,
+      "mz_max": 767.042,
+      "base_peak_mz": 385.75,
+      "tic": 2091.75,
+      "first3_peaks": [
+        [
+          382.449,
+          18.149
+        ],
+        [
+          468.769,
+          5.637
+        ],
+        [
+          315.716,
+          19.762
+        ]
+      ],
+      "peaks_sha1": "cdefe6e54b29180e2921481a617e403c25dcd69f"
+    },
+    {
+      "index": 23,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=655",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 492.240814208984,
+      "n_peaks": 105,
+      "mz_min": 170.098,
+      "mz_max": 960.673,
+      "base_peak_mz": 513.779,
+      "tic": 2250.472,
+      "first3_peaks": [
+        [
+          436.977,
+          4.642
+        ],
+        [
+          514.389,
+          63.144
+        ],
+        [
+          474.675,
+          109.185
+        ]
+      ],
+      "peaks_sha1": "1467ef3a599dc4d7cb2a0df4d97479457ee48d71"
+    },
+    {
+      "index": 24,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=665",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 439.703308105469,
+      "n_peaks": 99,
+      "mz_min": 126.11,
+      "mz_max": 856.141,
+      "base_peak_mz": 431.32,
+      "tic": 1568.911,
+      "first3_peaks": [
+        [
+          275.832,
+          4.615
+        ],
+        [
+          659.491,
+          10.719
+        ],
+        [
+          170.148,
+          9.28
+        ]
+      ],
+      "peaks_sha1": "9801ea86aa95ab7da9098a1d0de25c810eb31d88"
+    },
+    {
+      "index": 25,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=670",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 484.746002197266,
+      "n_peaks": 88,
+      "mz_min": 184.231,
+      "mz_max": 946.104,
+      "base_peak_mz": 466.871,
+      "tic": 1564.807,
+      "first3_peaks": [
+        [
+          812.705,
+          14.593
+        ],
+        [
+          243.119,
+          7.403
+        ],
+        [
+          417.027,
+          9.253
+        ]
+      ],
+      "peaks_sha1": "d6edb43d661472cb9f62754e45e5a6cb5e049a42"
+    },
+    {
+      "index": 26,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=679",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 382.172393798828,
+      "n_peaks": 141,
+      "mz_min": 130.242,
+      "mz_max": 740.954,
+      "base_peak_mz": 373.516,
+      "tic": 2955.358,
+      "first3_peaks": [
+        [
+          175.185,
+          23.048
+        ],
+        [
+          606.396,
+          29.401
+        ],
+        [
+          479.222,
+          2.951
+        ]
+      ],
+      "peaks_sha1": "a3a519aa32af766034747373434b9cc13362dfae"
+    },
+    {
+      "index": 27,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=680",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 488.242523193359,
+      "n_peaks": 188,
+      "mz_min": 157.987,
+      "mz_max": 1014.69,
+      "base_peak_mz": 508.459,
+      "tic": 7027.384,
+      "first3_peaks": [
+        [
+          195.217,
+          4.795
+        ],
+        [
+          738.582,
+          3.237
+        ],
+        [
+          216.039,
+          5.375
+        ]
+      ],
+      "peaks_sha1": "e518b7ec1f926eba0ba394e00c9050a6a8b35e8b"
+    },
+    {
+      "index": 28,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=686",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 650.654235839844,
+      "n_peaks": 95,
+      "mz_min": 215.098,
+      "mz_max": 1278.321,
+      "base_peak_mz": 632.957,
+      "tic": 1540.951,
+      "first3_peaks": [
+        [
+          1013.409,
+          2.534
+        ],
+        [
+          685.364,
+          5.761
+        ],
+        [
+          629.482,
+          16.202
+        ]
+      ],
+      "peaks_sha1": "38e3c55bb6b23cc12470714db5851a4fde4ea6ed"
+    },
+    {
+      "index": 29,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=687",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 599.297180175781,
+      "n_peaks": 80,
+      "mz_min": 256.308,
+      "mz_max": 1236.406,
+      "base_peak_mz": 581.697,
+      "tic": 1022.032,
+      "first3_peaks": [
+        [
+          1041.813,
+          2.036
+        ],
+        [
+          572.808,
+          26.143
+        ],
+        [
+          518.613,
+          6.252
+        ]
+      ],
+      "peaks_sha1": "df96cc9b92f9c8d0996a222191d8887ae280daf5"
+    },
+    {
+      "index": 30,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=688",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.800720214844,
+      "n_peaks": 110,
+      "mz_min": 207.157,
+      "mz_max": 1236.188,
+      "base_peak_mz": 620.966,
+      "tic": 2161.957,
+      "first3_peaks": [
+        [
+          535.89,
+          25.317
+        ],
+        [
+          329.255,
+          1.823
+        ],
+        [
+          401.183,
+          15.307
+        ]
+      ],
+      "peaks_sha1": "2e027e745ccf122e4e811ad4318f8ce24ba93f91"
+    },
+    {
+      "index": 31,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=693",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.253784179688,
+      "n_peaks": 128,
+      "mz_min": 120.17,
+      "mz_max": 741.248,
+      "base_peak_mz": 299.303,
+      "tic": 2497.591,
+      "first3_peaks": [
+        [
+          194.7,
+          10.898
+        ],
+        [
+          255.282,
+          82.386
+        ],
+        [
+          264.159,
+          5.954
+        ]
+      ],
+      "peaks_sha1": "612802ef90312b2fad4c539a9931fcb614b91d7c"
+    },
+    {
+      "index": 32,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=701",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 376.534576416016,
+      "n_peaks": 155,
+      "mz_min": 128.619,
+      "mz_max": 740.43,
+      "base_peak_mz": 500.4,
+      "tic": 4029.379,
+      "first3_peaks": [
+        [
+          551.332,
+          38.391
+        ],
+        [
+          300.26,
+          6.226
+        ],
+        [
+          331.059,
+          7.883
+        ]
+      ],
+      "peaks_sha1": "303e2bbce9a7857b1f6fc4f6fe5fd9f50d9358eb"
+    },
+    {
+      "index": 33,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=710",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 556.303649902344,
+      "n_peaks": 102,
+      "mz_min": 197.276,
+      "mz_max": 1072.654,
+      "base_peak_mz": 538.715,
+      "tic": 1368.46,
+      "first3_peaks": [
+        [
+          349.755,
+          6.197
+        ],
+        [
+          1068.488,
+          6.595
+        ],
+        [
+          484.962,
+          14.378
+        ]
+      ],
+      "peaks_sha1": "ff801123e2e0bdfc0619bdfd10e1803b6fb9ce68"
+    },
+    {
+      "index": 34,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=716",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 620.933471679688,
+      "n_peaks": 84,
+      "mz_min": 201.187,
+      "mz_max": 1202.244,
+      "base_peak_mz": 603.713,
+      "tic": 1573.201,
+      "first3_peaks": [
+        [
+          821.86,
+          44.32
+        ],
+        [
+          1192.598,
+          25.341
+        ],
+        [
+          239.076,
+          8.244
+        ]
+      ],
+      "peaks_sha1": "13c435e86b57420093f2185dcb4221b2e1317f93"
+    },
+    {
+      "index": 35,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=721",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 434.737945556641,
+      "n_peaks": 160,
+      "mz_min": 129.078,
+      "mz_max": 846.644,
+      "base_peak_mz": 425.999,
+      "tic": 3665.067,
+      "first3_peaks": [
+        [
+          714.412,
+          119.225
+        ],
+        [
+          232.297,
+          6.636
+        ],
+        [
+          481.993,
+          7.698
+        ]
+      ],
+      "peaks_sha1": "d2b5222e380b03b773c5c9df107cf17ccc400c5c"
+    },
+    {
+      "index": 36,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=722",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 420.739959716797,
+      "n_peaks": 140,
+      "mz_min": 129.149,
+      "mz_max": 835.695,
+      "base_peak_mz": 342.882,
+      "tic": 3491.528,
+      "first3_peaks": [
+        [
+          329.005,
+          7.067
+        ],
+        [
+          460.356,
+          11.154
+        ],
+        [
+          499.396,
+          14.693
+        ]
+      ],
+      "peaks_sha1": "6e8ccb85c16061f36905dc0da3465592673e4564"
+    },
+    {
+      "index": 37,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=732",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 465.953430175781,
+      "n_peaks": 130,
+      "mz_min": 158.143,
+      "mz_max": 909.605,
+      "base_peak_mz": 439.452,
+      "tic": 2756.206,
+      "first3_peaks": [
+        [
+          391.364,
+          10.18
+        ],
+        [
+          448.993,
+          178.391
+        ],
+        [
+          419.76,
+          42.437
+        ]
+      ],
+      "peaks_sha1": "d12abe365875952ec683075a04e98827439df785"
+    },
+    {
+      "index": 38,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=738",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 471.257446289063,
+      "n_peaks": 95,
+      "mz_min": 183.091,
+      "mz_max": 861.028,
+      "base_peak_mz": 462.54,
+      "tic": 1412.915,
+      "first3_peaks": [
+        [
+          458.049,
+          8.573
+        ],
+        [
+          313.558,
+          14.507
+        ],
+        [
+          376.051,
+          6.436
+        ]
+      ],
+      "peaks_sha1": "62f6bc5ff31ad72ca023f9044007095f31a9d5a4"
+    },
+    {
+      "index": 39,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=740",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 615.602172851563,
+      "n_peaks": 103,
+      "mz_min": 213.101,
+      "mz_max": 1207.4,
+      "base_peak_mz": 577.396,
+      "tic": 1852.205,
+      "first3_peaks": [
+        [
+          444.825,
+          10.157
+        ],
+        [
+          271.169,
+          3.89
+        ],
+        [
+          594.933,
+          16.006
+        ]
+      ],
+      "peaks_sha1": "a65ed7269d34ca7455e10f44b885bc69db1aa371"
+    },
+    {
+      "index": 40,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=742",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 439.705017089844,
+      "n_peaks": 128,
+      "mz_min": 156.451,
+      "mz_max": 775.414,
+      "base_peak_mz": 633.379,
+      "tic": 2845.942,
+      "first3_peaks": [
+        [
+          342.022,
+          6.332
+        ],
+        [
+          368.141,
+          3.165
+        ],
+        [
+          465.306,
+          4.88
+        ]
+      ],
+      "peaks_sha1": "d8363bbeb17cc7b3cffc70bbc9ff5c8e8b2a407f"
+    },
+    {
+      "index": 41,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=747",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 484.744445800781,
+      "n_peaks": 126,
+      "mz_min": 147.211,
+      "mz_max": 854.544,
+      "base_peak_mz": 526.22,
+      "tic": 2973.501,
+      "first3_peaks": [
+        [
+          384.987,
+          20.19
+        ],
+        [
+          403.405,
+          2.943
+        ],
+        [
+          359.826,
+          10.307
+        ]
+      ],
+      "peaks_sha1": "28efc504a359cb3d306bf9a6e599de7444b7779c"
+    },
+    {
+      "index": 42,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=753",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.302642822266,
+      "n_peaks": 134,
+      "mz_min": 129.121,
+      "mz_max": 765.667,
+      "base_peak_mz": 366.879,
+      "tic": 2696.69,
+      "first3_peaks": [
+        [
+          343.484,
+          5.424
+        ],
+        [
+          531.418,
+          5.11
+        ],
+        [
+          303.251,
+          7.738
+        ]
+      ],
+      "peaks_sha1": "3bc1098213537c0eb631b195973ba314192df28b"
+    },
+    {
+      "index": 43,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=755",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 835.128051757813,
+      "n_peaks": 64,
+      "mz_min": 309.311,
+      "mz_max": 1594.378,
+      "base_peak_mz": 1044.221,
+      "tic": 1575.663,
+      "first3_peaks": [
+        [
+          902.018,
+          21.807
+        ],
+        [
+          784.462,
+          126.723
+        ],
+        [
+          353.327,
+          3.987
+        ]
+      ],
+      "peaks_sha1": "2ba53d50a05f57cc9caa0b89cac2323680320033"
+    },
+    {
+      "index": 44,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=757",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 597.618408203125,
+      "n_peaks": 116,
+      "mz_min": 172.092,
+      "mz_max": 1279.869,
+      "base_peak_mz": 579.874,
+      "tic": 1974.31,
+      "first3_peaks": [
+        [
+          576.873,
+          2.661
+        ],
+        [
+          524.775,
+          61.734
+        ],
+        [
+          730.307,
+          32.004
+        ]
+      ],
+      "peaks_sha1": "23fc31519d291c033c47c9f63b4d53a2b90fd352"
+    },
+    {
+      "index": 45,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=758",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 500.268463134766,
+      "n_peaks": 106,
+      "mz_min": 159.116,
+      "mz_max": 888.574,
+      "base_peak_mz": 379.871,
+      "tic": 1797.357,
+      "first3_peaks": [
+        [
+          463.989,
+          8.978
+        ],
+        [
+          462.908,
+          3.319
+        ],
+        [
+          461.938,
+          6.114
+        ]
+      ],
+      "peaks_sha1": "4ed52bd13f6ad198b852288b0023106daffad897"
+    },
+    {
+      "index": 46,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=761",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 667.832641601563,
+      "n_peaks": 64,
+      "mz_min": 247.136,
+      "mz_max": 1210.399,
+      "base_peak_mz": 649.828,
+      "tic": 959.546,
+      "first3_peaks": [
+        [
+          621.877,
+          5.296
+        ],
+        [
+          813.598,
+          2.383
+        ],
+        [
+          963.732,
+          7.503
+        ]
+      ],
+      "peaks_sha1": "e23a9f4cd6e01e97d4ab1fac45097a6b7413a470"
+    },
+    {
+      "index": 47,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=764",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 834.3759765625,
+      "n_peaks": 62,
+      "mz_min": 265.179,
+      "mz_max": 1499.904,
+      "base_peak_mz": 1044.529,
+      "tic": 2759.611,
+      "first3_peaks": [
+        [
+          779.235,
+          26.664
+        ],
+        [
+          835.634,
+          7.645
+        ],
+        [
+          707.72,
+          6.441
+        ]
+      ],
+      "peaks_sha1": "d6bbbdf0cd13d061cfd8a058615fe09ea27c5f3b"
+    },
+    {
+      "index": 48,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=766",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 510.259674072266,
+      "n_peaks": 111,
+      "mz_min": 169.279,
+      "mz_max": 907.186,
+      "base_peak_mz": 401.389,
+      "tic": 2037.069,
+      "first3_peaks": [
+        [
+          392.018,
+          3.986
+        ],
+        [
+          578.931,
+          17.265
+        ],
+        [
+          451.969,
+          54.809
+        ]
+      ],
+      "peaks_sha1": "3de15f954d278389f984a630b94af3d7c9c35ce2"
+    },
+    {
+      "index": 49,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=768",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.801696777344,
+      "n_peaks": 80,
+      "mz_min": 196.986,
+      "mz_max": 1121.032,
+      "base_peak_mz": 620.979,
+      "tic": 1260.765,
+      "first3_peaks": [
+        [
+          987.626,
+          14.661
+        ],
+        [
+          620.979,
+          187.327
+        ],
+        [
+          655.175,
+          11.373
+        ]
+      ],
+      "peaks_sha1": "d9eaa29b5fba7ac862485b4fd14b49ca3fe28bfe"
+    },
+    {
+      "index": 50,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=775",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 399.253021240234,
+      "n_peaks": 117,
+      "mz_min": 127.099,
+      "mz_max": 709.36,
+      "base_peak_mz": 299.273,
+      "tic": 2239.087,
+      "first3_peaks": [
+        [
+          383.183,
+          51.053
+        ],
+        [
+          277.189,
+          3.586
+        ],
+        [
+          129.134,
+          1.826
+        ]
+      ],
+      "peaks_sha1": "0f8bc1c1174ecef0bcf2402602e2fc9686124623"
+    },
+    {
+      "index": 51,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=781",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 376.534332275391,
+      "n_peaks": 174,
+      "mz_min": 118.284,
+      "mz_max": 730.832,
+      "base_peak_mz": 500.531,
+      "tic": 5188.947,
+      "first3_peaks": [
+        [
+          448.922,
+          7.79
+        ],
+        [
+          358.192,
+          167.918
+        ],
+        [
+          157.142,
+          4.497
+        ]
+      ],
+      "peaks_sha1": "e9ef0d8d11fcdd8f3d10cecfd0912eea93337fa4"
+    },
+    {
+      "index": 52,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=786",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 496.557037353516,
+      "n_peaks": 139,
+      "mz_min": 143.112,
+      "mz_max": 952.636,
+      "base_peak_mz": 469.371,
+      "tic": 3433.606,
+      "first3_peaks": [
+        [
+          680.959,
+          6.207
+        ],
+        [
+          594.119,
+          160.557
+        ],
+        [
+          570.67,
+          4.529
+        ]
+      ],
+      "peaks_sha1": "cebd01c28b07240e198425c09e37363e7d48da63"
+    },
+    {
+      "index": 53,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=790",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 642.325561523438,
+      "n_peaks": 87,
+      "mz_min": 204.202,
+      "mz_max": 1120.457,
+      "base_peak_mz": 623.835,
+      "tic": 1584.045,
+      "first3_peaks": [
+        [
+          487.366,
+          6.187
+        ],
+        [
+          563.846,
+          21.436
+        ],
+        [
+          497.048,
+          2.097
+        ]
+      ],
+      "peaks_sha1": "67ffb604fd211d53f79a94882cc6bf352695993e"
+    },
+    {
+      "index": 54,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=794",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 686.667846679688,
+      "n_peaks": 108,
+      "mz_min": 220.513,
+      "mz_max": 1351.387,
+      "base_peak_mz": 633.833,
+      "tic": 2126.771,
+      "first3_peaks": [
+        [
+          1350.384,
+          4.456
+        ],
+        [
+          423.997,
+          3.405
+        ],
+        [
+          356.053,
+          4.507
+        ]
+      ],
+      "peaks_sha1": "6a8981cf91412f76ea79d655cb51c130b750b576"
+    },
+    {
+      "index": 55,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=797",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 590.269409179688,
+      "n_peaks": 105,
+      "mz_min": 177.145,
+      "mz_max": 1157.646,
+      "base_peak_mz": 572.021,
+      "tic": 1578.42,
+      "first3_peaks": [
+        [
+          473.703,
+          12.308
+        ],
+        [
+          580.552,
+          12.778
+        ],
+        [
+          232.177,
+          14.196
+        ]
+      ],
+      "peaks_sha1": "c5d0711894fa7b11dd5fec10653f8017d641a7bf"
+    },
+    {
+      "index": 56,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=798",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 577.928466796875,
+      "n_peaks": 102,
+      "mz_min": 209.012,
+      "mz_max": 1115.471,
+      "base_peak_mz": 560.045,
+      "tic": 1376.312,
+      "first3_peaks": [
+        [
+          226.082,
+          11.129
+        ],
+        [
+          436.892,
+          5.609
+        ],
+        [
+          556.693,
+          5.672
+        ]
+      ],
+      "peaks_sha1": "b6875a58f27d9a1e32a3b07c0d31e6352ce74af7"
+    },
+    {
+      "index": 57,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=801",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 577.260986328125,
+      "n_peaks": 80,
+      "mz_min": 191.036,
+      "mz_max": 1112.497,
+      "base_peak_mz": 559.792,
+      "tic": 1175.505,
+      "first3_peaks": [
+        [
+          512.43,
+          11.22
+        ],
+        [
+          535.883,
+          12.074
+        ],
+        [
+          568.401,
+          74.278
+        ]
+      ],
+      "peaks_sha1": "1048186853192a7c820a8ac8c29abc0059e835ad"
+    },
+    {
+      "index": 58,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=805",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 434.73779296875,
+      "n_peaks": 189,
+      "mz_min": 127.164,
+      "mz_max": 845.734,
+      "base_peak_mz": 425.918,
+      "tic": 7870.878,
+      "first3_peaks": [
+        [
+          335.208,
+          23.578
+        ],
+        [
+          384.135,
+          35.769
+        ],
+        [
+          322.197,
+          17.068
+        ]
+      ],
+      "peaks_sha1": "27e9ba85c78ca53374d426007942b42a9b5d05d9"
+    },
+    {
+      "index": 59,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=808",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 553.294189453125,
+      "n_peaks": 163,
+      "mz_min": 169.292,
+      "mz_max": 1083.461,
+      "base_peak_mz": 821.474,
+      "tic": 4365.099,
+      "first3_peaks": [
+        [
+          948.77,
+          3.061
+        ],
+        [
+          578.272,
+          18.772
+        ],
+        [
+          372.249,
+          22.855
+        ]
+      ],
+      "peaks_sha1": "3fd09d651cd1843c2d52aab4df97efe332ac8358"
+    },
+    {
+      "index": 60,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=811",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 544.90625,
+      "n_peaks": 157,
+      "mz_min": 175.175,
+      "mz_max": 1068.924,
+      "base_peak_mz": 526.868,
+      "tic": 2311.431,
+      "first3_peaks": [
+        [
+          843.576,
+          31.912
+        ],
+        [
+          499.889,
+          3.97
+        ],
+        [
+          394.988,
+          4.048
+        ]
+      ],
+      "peaks_sha1": "05c6d1d3afc345100cc1208efcbbcb4ca37df04d"
+    },
+    {
+      "index": 61,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=813",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 509.266754150391,
+      "n_peaks": 126,
+      "mz_min": 193.064,
+      "mz_max": 967.37,
+      "base_peak_mz": 642.416,
+      "tic": 2767.743,
+      "first3_peaks": [
+        [
+          527.643,
+          3.896
+        ],
+        [
+          613.335,
+          14.865
+        ],
+        [
+          196.385,
+          12.974
+        ]
+      ],
+      "peaks_sha1": "3d4792b6ee5396cff0a2ba32ae01447825718973"
+    },
+    {
+      "index": 62,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=815",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 839.380920410156,
+      "n_peaks": 48,
+      "mz_min": 253.25,
+      "mz_max": 1580.624,
+      "base_peak_mz": 783.833,
+      "tic": 1024.541,
+      "first3_peaks": [
+        [
+          814.95,
+          10.524
+        ],
+        [
+          781.565,
+          2.491
+        ],
+        [
+          615.257,
+          3.263
+        ]
+      ],
+      "peaks_sha1": "8f670b415bfb9c5307600453f4a82af6014f5dfd"
+    },
+    {
+      "index": 63,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=816",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 498.736022949219,
+      "n_peaks": 130,
+      "mz_min": 147.108,
+      "mz_max": 976.471,
+      "base_peak_mz": 480.544,
+      "tic": 2236.339,
+      "first3_peaks": [
+        [
+          859.074,
+          12.898
+        ],
+        [
+          651.429,
+          4.452
+        ],
+        [
+          708.767,
+          6.441
+        ]
+      ],
+      "peaks_sha1": "43ac34eca30619843d151c88431ea8748b2a2750"
+    },
+    {
+      "index": 64,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=819",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 830.627258300781,
+      "n_peaks": 53,
+      "mz_min": 258.061,
+      "mz_max": 1787.289,
+      "base_peak_mz": 780.019,
+      "tic": 1560.692,
+      "first3_peaks": [
+        [
+          860.253,
+          9.758
+        ],
+        [
+          784.508,
+          3.376
+        ],
+        [
+          706.067,
+          3.972
+        ]
+      ],
+      "peaks_sha1": "10f74682c05084dec5b5bb3537fe8f9c0f931424"
+    },
+    {
+      "index": 65,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=824",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 838.374694824219,
+      "n_peaks": 62,
+      "mz_min": 256.138,
+      "mz_max": 1637.165,
+      "base_peak_mz": 783.803,
+      "tic": 1268.294,
+      "first3_peaks": [
+        [
+          440.325,
+          9.295
+        ],
+        [
+          787.557,
+          80.282
+        ],
+        [
+          806.348,
+          12.107
+        ]
+      ],
+      "peaks_sha1": "f6d7917f5a30e9014bfd3ff7f9859c7378d655dc"
+    },
+    {
+      "index": 66,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=826",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 621.805603027344,
+      "n_peaks": 98,
+      "mz_min": 207.164,
+      "mz_max": 1219.256,
+      "base_peak_mz": 603.783,
+      "tic": 1701.351,
+      "first3_peaks": [
+        [
+          1155.395,
+          9.147
+        ],
+        [
+          442.265,
+          16.549
+        ],
+        [
+          613.264,
+          74.164
+        ]
+      ],
+      "peaks_sha1": "0f708e56260f1f63f012e8ce29daeda66b4e6da0"
+    },
+    {
+      "index": 67,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=829",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 471.258209228516,
+      "n_peaks": 116,
+      "mz_min": 155.163,
+      "mz_max": 797.675,
+      "base_peak_mz": 453.952,
+      "tic": 2024.918,
+      "first3_peaks": [
+        [
+          463.859,
+          6.13
+        ],
+        [
+          526.346,
+          19.559
+        ],
+        [
+          268.411,
+          2.636
+        ]
+      ],
+      "peaks_sha1": "81303a2d43fcfd0efe62281fa799f84afc291f41"
+    },
+    {
+      "index": 68,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=830",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 615.93798828125,
+      "n_peaks": 99,
+      "mz_min": 255.196,
+      "mz_max": 958.606,
+      "base_peak_mz": 577.431,
+      "tic": 2269.749,
+      "first3_peaks": [
+        [
+          413.276,
+          22.478
+        ],
+        [
+          264.203,
+          6.288
+        ],
+        [
+          792.404,
+          12.197
+        ]
+      ],
+      "peaks_sha1": "ab2f71d598912a316f368d21e7b1c7138ecd9d8e"
+    },
+    {
+      "index": 69,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=839",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 617.620849609375,
+      "n_peaks": 114,
+      "mz_min": 175.213,
+      "mz_max": 1212.308,
+      "base_peak_mz": 599.761,
+      "tic": 1527.727,
+      "first3_peaks": [
+        [
+          880.284,
+          4.7
+        ],
+        [
+          444.466,
+          11.43
+        ],
+        [
+          700.272,
+          11.907
+        ]
+      ],
+      "peaks_sha1": "080941c263780db619f3ace4fe4b380a10f22514"
+    },
+    {
+      "index": 70,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=847",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 454.978546142578,
+      "n_peaks": 149,
+      "mz_min": 147.175,
+      "mz_max": 797.201,
+      "base_peak_mz": 563.163,
+      "tic": 3355.348,
+      "first3_peaks": [
+        [
+          438.968,
+          29.339
+        ],
+        [
+          253.076,
+          4.815
+        ],
+        [
+          601.347,
+          5.799
+        ]
+      ],
+      "peaks_sha1": "4b55da9bbec842e51259766aefc281cb29fb08e2"
+    },
+    {
+      "index": 71,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=849",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 834.374816894531,
+      "n_peaks": 100,
+      "mz_min": 258.19,
+      "mz_max": 1532.262,
+      "base_peak_mz": 783.712,
+      "tic": 7103.308,
+      "first3_peaks": [
+        [
+          558.343,
+          8.695
+        ],
+        [
+          952.628,
+          54.199
+        ],
+        [
+          758.807,
+          62.965
+        ]
+      ],
+      "peaks_sha1": "4c5bd42d41069481801f2fee7602ae734927c40f"
+    },
+    {
+      "index": 72,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=856",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.798461914063,
+      "n_peaks": 82,
+      "mz_min": 183.187,
+      "mz_max": 1237.42,
+      "base_peak_mz": 611.789,
+      "tic": 1322.311,
+      "first3_peaks": [
+        [
+          457.016,
+          3.551
+        ],
+        [
+          1089.702,
+          17.923
+        ],
+        [
+          593.597,
+          23.288
+        ]
+      ],
+      "peaks_sha1": "400c1930a2158aa89280729430deecfe3f89c857"
+    },
+    {
+      "index": 73,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=858",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 773.291259765625,
+      "n_peaks": 38,
+      "mz_min": 221.123,
+      "mz_max": 939.621,
+      "base_peak_mz": 755.779,
+      "tic": 512.425,
+      "first3_peaks": [
+        [
+          743.003,
+          3.569
+        ],
+        [
+          692.07,
+          5.032
+        ],
+        [
+          873.346,
+          2.235
+        ]
+      ],
+      "peaks_sha1": "f9a2bea5e584508f9ec08ec373bbcc1b7b4887b1"
+    },
+    {
+      "index": 74,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=860",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 398.927886962891,
+      "n_peaks": 145,
+      "mz_min": 129.232,
+      "mz_max": 733.394,
+      "base_peak_mz": 299.251,
+      "tic": 3663.567,
+      "first3_peaks": [
+        [
+          490.343,
+          71.94
+        ],
+        [
+          451.635,
+          14.382
+        ],
+        [
+          506.656,
+          13.4
+        ]
+      ],
+      "peaks_sha1": "5a045c9a3c9be6d6e227052415da7ddba56654cd"
+    },
+    {
+      "index": 75,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=868",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 530.767456054688,
+      "n_peaks": 126,
+      "mz_min": 158.259,
+      "mz_max": 1043.367,
+      "base_peak_mz": 521.572,
+      "tic": 2284.883,
+      "first3_peaks": [
+        [
+          555.089,
+          12.476
+        ],
+        [
+          604.497,
+          7.062
+        ],
+        [
+          468.251,
+          29.595
+        ]
+      ],
+      "peaks_sha1": "72adf5e575a3922dca38fad9761b44a0c633f529"
+    },
+    {
+      "index": 76,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=870",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 810.876647949219,
+      "n_peaks": 72,
+      "mz_min": 458.14,
+      "mz_max": 1611.76,
+      "base_peak_mz": 781.995,
+      "tic": 1165.72,
+      "first3_peaks": [
+        [
+          1021.123,
+          16.249
+        ],
+        [
+          935.972,
+          16.084
+        ],
+        [
+          854.435,
+          4.312
+        ]
+      ],
+      "peaks_sha1": "9e309bcae54544ac61f3a1af0e41ae0fa2a0c6b2"
+    },
+    {
+      "index": 77,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=871",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.304107666016,
+      "n_peaks": 152,
+      "mz_min": 115.176,
+      "mz_max": 730.272,
+      "base_peak_mz": 366.779,
+      "tic": 3505.882,
+      "first3_peaks": [
+        [
+          669.393,
+          10.385
+        ],
+        [
+          628.407,
+          3.797
+        ],
+        [
+          376.093,
+          65.362
+        ]
+      ],
+      "peaks_sha1": "bc8033a7039bbdcd92170d69a70b4547cb20ca18"
+    },
+    {
+      "index": 78,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=872",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 320.196350097656,
+      "n_peaks": 118,
+      "mz_min": 98.297,
+      "mz_max": 616.641,
+      "base_peak_mz": 373.467,
+      "tic": 3920.552,
+      "first3_peaks": [
+        [
+          298.85,
+          20.1
+        ],
+        [
+          463.006,
+          8.448
+        ],
+        [
+          136.264,
+          3.192
+        ]
+      ],
+      "peaks_sha1": "60b46be60bf914802e0e5a3285da5ed161950454"
+    },
+    {
+      "index": 79,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=874",
+      "scan": null,
+      "charge": 5,
+      "precursor_mz": 649.1025390625,
+      "n_peaks": 97,
+      "mz_min": 260.197,
+      "mz_max": 1259.055,
+      "base_peak_mz": 631.202,
+      "tic": 2465.333,
+      "first3_peaks": [
+        [
+          572.963,
+          13.783
+        ],
+        [
+          806.255,
+          80.555
+        ],
+        [
+          620.285,
+          5.115
+        ]
+      ],
+      "peaks_sha1": "c25e6fcd5c8e73ed92667163d9c80853a00fd941"
+    },
+    {
+      "index": 80,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=878",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 664.796997070313,
+      "n_peaks": 82,
+      "mz_min": 262.983,
+      "mz_max": 1229.377,
+      "base_peak_mz": 646.743,
+      "tic": 1012.084,
+      "first3_peaks": [
+        [
+          642.921,
+          4.069
+        ],
+        [
+          357.385,
+          5.173
+        ],
+        [
+          428.059,
+          4.101
+        ]
+      ],
+      "peaks_sha1": "2f8f50760124af86b8d8d552b0d6830fc5e53c32"
+    },
+    {
+      "index": 81,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=882",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 657.308288574219,
+      "n_peaks": 125,
+      "mz_min": 256.7,
+      "mz_max": 1293.402,
+      "base_peak_mz": 806.056,
+      "tic": 2828.168,
+      "first3_peaks": [
+        [
+          537.703,
+          112.632
+        ],
+        [
+          1031.422,
+          2.881
+        ],
+        [
+          559.945,
+          2.421
+        ]
+      ],
+      "peaks_sha1": "ebcd726d6170115839139cde72b85ea6466dfb2e"
+    },
+    {
+      "index": 82,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=883",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 686.334289550781,
+      "n_peaks": 134,
+      "mz_min": 224.328,
+      "mz_max": 1349.421,
+      "base_peak_mz": 633.947,
+      "tic": 2754.558,
+      "first3_peaks": [
+        [
+          1332.541,
+          7.191
+        ],
+        [
+          902.583,
+          16.179
+        ],
+        [
+          518.825,
+          5.333
+        ]
+      ],
+      "peaks_sha1": "3063087fe3f03bec1bdaecb84e1062ad39fc666d"
+    },
+    {
+      "index": 83,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=889",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 757.248352050781,
+      "n_peaks": 65,
+      "mz_min": 280.339,
+      "mz_max": 1406.333,
+      "base_peak_mz": 739.045,
+      "tic": 776.091,
+      "first3_peaks": [
+        [
+          693.07,
+          23.421
+        ],
+        [
+          676.799,
+          3.834
+        ],
+        [
+          693.843,
+          7.375
+        ]
+      ],
+      "peaks_sha1": "2b2dc64dbc43e24761db3b2a46acbc314aea3425"
+    },
+    {
+      "index": 84,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=890",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 538.743957519531,
+      "n_peaks": 133,
+      "mz_min": 157.204,
+      "mz_max": 929.388,
+      "base_peak_mz": 520.862,
+      "tic": 3503.814,
+      "first3_peaks": [
+        [
+          369.195,
+          1.972
+        ],
+        [
+          506.154,
+          122.371
+        ],
+        [
+          391.082,
+          3.35
+        ]
+      ],
+      "peaks_sha1": "e8a07663a60075731e0c87ac2f13c3ac3d80da26"
+    },
+    {
+      "index": 85,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=894",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 434.737976074219,
+      "n_peaks": 181,
+      "mz_min": 127.067,
+      "mz_max": 847.571,
+      "base_peak_mz": 425.883,
+      "tic": 4904.808,
+      "first3_peaks": [
+        [
+          705.402,
+          6.156
+        ],
+        [
+          314.992,
+          11.806
+        ],
+        [
+          304.2,
+          7.274
+        ]
+      ],
+      "peaks_sha1": "270762835d6ccd097cbd1a2099aba7a9636f8f53"
+    },
+    {
+      "index": 86,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=896",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 553.294677734375,
+      "n_peaks": 234,
+      "mz_min": 157.148,
+      "mz_max": 1083.664,
+      "base_peak_mz": 821.46,
+      "tic": 20251.437,
+      "first3_peaks": [
+        [
+          518.15,
+          52.282
+        ],
+        [
+          689.498,
+          2.399
+        ],
+        [
+          306.068,
+          3.582
+        ]
+      ],
+      "peaks_sha1": "481c09a745420baa1c4d27c26f4f3959c0cfd53b"
+    },
+    {
+      "index": 87,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=899",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 381.847778320313,
+      "n_peaks": 172,
+      "mz_min": 97.336,
+      "mz_max": 740.481,
+      "base_peak_mz": 373.54,
+      "tic": 3978.049,
+      "first3_peaks": [
+        [
+          279.424,
+          10.247
+        ],
+        [
+          223.779,
+          13.719
+        ],
+        [
+          213.264,
+          18.744
+        ]
+      ],
+      "peaks_sha1": "1905ef597877652325bedc87117df6ecd958f1b3"
+    },
+    {
+      "index": 88,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=903",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 508.602020263672,
+      "n_peaks": 176,
+      "mz_min": 157.122,
+      "mz_max": 1191.267,
+      "base_peak_mz": 370.81,
+      "tic": 3173.587,
+      "first3_peaks": [
+        [
+          487.124,
+          80.867
+        ],
+        [
+          768.201,
+          4.274
+        ],
+        [
+          370.81,
+          251.634
+        ]
+      ],
+      "peaks_sha1": "a0b88f4a21013a56a999fe991252fab3f54e5cc1"
+    },
+    {
+      "index": 89,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=905",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 488.266845703125,
+      "n_peaks": 177,
+      "mz_min": 153.498,
+      "mz_max": 936.865,
+      "base_peak_mz": 469.85,
+      "tic": 3290.225,
+      "first3_peaks": [
+        [
+          451.687,
+          24.927
+        ],
+        [
+          387.61,
+          5.504
+        ],
+        [
+          353.223,
+          24.237
+        ]
+      ],
+      "peaks_sha1": "6e282f5cbb5d521663fa92afede6b1dcd4fa4143"
+    },
+    {
+      "index": 90,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=909",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 830.379028320313,
+      "n_peaks": 113,
+      "mz_min": 285.444,
+      "mz_max": 1639.191,
+      "base_peak_mz": 783.81,
+      "tic": 8349.744,
+      "first3_peaks": [
+        [
+          992.681,
+          16.998
+        ],
+        [
+          779.685,
+          844.318
+        ],
+        [
+          830.716,
+          19.859
+        ]
+      ],
+      "peaks_sha1": "14ea78c919c6f3ca6bb76c4aa07813ef6acff139"
+    },
+    {
+      "index": 91,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=913",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 452.713531494141,
+      "n_peaks": 167,
+      "mz_min": 146.249,
+      "mz_max": 865.945,
+      "base_peak_mz": 435.049,
+      "tic": 3759.571,
+      "first3_peaks": [
+        [
+          324.178,
+          4.45
+        ],
+        [
+          779.121,
+          6.448
+        ],
+        [
+          601.025,
+          15.604
+        ]
+      ],
+      "peaks_sha1": "5201467f0b375349b6066093e392c248664cd100"
+    },
+    {
+      "index": 92,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=914",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 766.690856933594,
+      "n_peaks": 72,
+      "mz_min": 298.055,
+      "mz_max": 1473.638,
+      "base_peak_mz": 748.673,
+      "tic": 1242.718,
+      "first3_peaks": [
+        [
+          1056.656,
+          27.364
+        ],
+        [
+          687.99,
+          6.44
+        ],
+        [
+          743.423,
+          6.36
+        ]
+      ],
+      "peaks_sha1": "fc39164b1f9c6b076ae8a810046966b0eaf230ed"
+    },
+    {
+      "index": 93,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=917",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 422.767120361328,
+      "n_peaks": 128,
+      "mz_min": 129.494,
+      "mz_max": 821.404,
+      "base_peak_mz": 405.182,
+      "tic": 2046.474,
+      "first3_peaks": [
+        [
+          322.688,
+          2.355
+        ],
+        [
+          279.248,
+          4.542
+        ],
+        [
+          321.117,
+          8.307
+        ]
+      ],
+      "peaks_sha1": "82832bb167879c5a15f2f95d7267028dc2cc87ad"
+    },
+    {
+      "index": 94,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=920",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 673.842346191406,
+      "n_peaks": 76,
+      "mz_min": 210.051,
+      "mz_max": 1210.501,
+      "base_peak_mz": 655.563,
+      "tic": 1082.409,
+      "first3_peaks": [
+        [
+          594.691,
+          10.168
+        ],
+        [
+          662.177,
+          41.122
+        ],
+        [
+          631.482,
+          4.824
+        ]
+      ],
+      "peaks_sha1": "4769ad99e66b052b27b9c1c5f56bc379c97f3b36"
+    },
+    {
+      "index": 95,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=922",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 572.300231933594,
+      "n_peaks": 110,
+      "mz_min": 234.189,
+      "mz_max": 1120.876,
+      "base_peak_mz": 1078.467,
+      "tic": 2951.447,
+      "first3_peaks": [
+        [
+          907.181,
+          2.55
+        ],
+        [
+          476.085,
+          21.287
+        ],
+        [
+          534.287,
+          3.126
+        ]
+      ],
+      "peaks_sha1": "e27aa33c144a27703f4fd25cb3f6b5eba6f413eb"
+    },
+    {
+      "index": 96,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=928",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 806.406677246094,
+      "n_peaks": 76,
+      "mz_min": 368.537,
+      "mz_max": 1573.368,
+      "base_peak_mz": 788.067,
+      "tic": 1147.335,
+      "first3_peaks": [
+        [
+          777.669,
+          80.992
+        ],
+        [
+          1082.774,
+          23.984
+        ],
+        [
+          731.014,
+          9.345
+        ]
+      ],
+      "peaks_sha1": "6fd2e9d9b7594d0790df77944100276f39c107b5"
+    },
+    {
+      "index": 97,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=931",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 687.002319335938,
+      "n_peaks": 118,
+      "mz_min": 208.177,
+      "mz_max": 1350.232,
+      "base_peak_mz": 633.883,
+      "tic": 2669.158,
+      "first3_peaks": [
+        [
+          626.718,
+          3.391
+        ],
+        [
+          957.659,
+          17.479
+        ],
+        [
+          366.169,
+          8.541
+        ]
+      ],
+      "peaks_sha1": "387b8636b6d2def469b07af805faad17d3846a4d"
+    },
+    {
+      "index": 98,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=937",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 834.6240234375,
+      "n_peaks": 91,
+      "mz_min": 282.094,
+      "mz_max": 1540.512,
+      "base_peak_mz": 783.76,
+      "tic": 3495.858,
+      "first3_peaks": [
+        [
+          982.455,
+          27.281
+        ],
+        [
+          861.449,
+          4.298
+        ],
+        [
+          817.771,
+          39.759
+        ]
+      ],
+      "peaks_sha1": "33298d5c6487d4e1bc13f9fc80ae339255556b02"
+    },
+    {
+      "index": 99,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=940",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 604.8017578125,
+      "n_peaks": 142,
+      "mz_min": 175.066,
+      "mz_max": 1185.881,
+      "base_peak_mz": 596.026,
+      "tic": 2145.267,
+      "first3_peaks": [
+        [
+          572.165,
+          17.399
+        ],
+        [
+          556.342,
+          12.697
+        ],
+        [
+          460.099,
+          15.598
+        ]
+      ],
+      "peaks_sha1": "44885dad0c93013645c973ee8fb73bb8f82b811e"
+    },
+    {
+      "index": 100,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=942",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 640.790222167969,
+      "n_peaks": 122,
+      "mz_min": 187.164,
+      "mz_max": 1156.439,
+      "base_peak_mz": 622.584,
+      "tic": 2115.304,
+      "first3_peaks": [
+        [
+          949.639,
+          8.246
+        ],
+        [
+          641.693,
+          31.797
+        ],
+        [
+          568.902,
+          28.05
+        ]
+      ],
+      "peaks_sha1": "ded807b26e015d077344d0928da2f772ed910c8d"
+    },
+    {
+      "index": 101,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=943",
+      "scan": null,
+      "charge": 5,
+      "precursor_mz": 645.704895019531,
+      "n_peaks": 124,
+      "mz_min": 184.167,
+      "mz_max": 1269.591,
+      "base_peak_mz": 532.439,
+      "tic": 3676.301,
+      "first3_peaks": [
+        [
+          411.528,
+          2.124
+        ],
+        [
+          880.853,
+          13.817
+        ],
+        [
+          255.481,
+          15.501
+        ]
+      ],
+      "peaks_sha1": "db7014d396180adfe754a44719684ee160048a2f"
+    },
+    {
+      "index": 102,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=944",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 807.13134765625,
+      "n_peaks": 108,
+      "mz_min": 280.009,
+      "mz_max": 1634.527,
+      "base_peak_mz": 798.189,
+      "tic": 1749.162,
+      "first3_peaks": [
+        [
+          1189.618,
+          3.756
+        ],
+        [
+          770.679,
+          11.816
+        ],
+        [
+          1133.097,
+          18.208
+        ]
+      ],
+      "peaks_sha1": "d11526e4efb85fe11d6a9c77db9e263bc8a58f2e"
+    },
+    {
+      "index": 103,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=947",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 669.803344726563,
+      "n_peaks": 97,
+      "mz_min": 243.209,
+      "mz_max": 1317.376,
+      "base_peak_mz": 651.645,
+      "tic": 1511.655,
+      "first3_peaks": [
+        [
+          629.521,
+          13.417
+        ],
+        [
+          625.582,
+          14.989
+        ],
+        [
+          1317.376,
+          19.596
+        ]
+      ],
+      "peaks_sha1": "ad06be0521c07fce36c9dd0aeca91ac065b88421"
+    },
+    {
+      "index": 104,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=949",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 629.805969238281,
+      "n_peaks": 129,
+      "mz_min": 210.032,
+      "mz_max": 1236.688,
+      "base_peak_mz": 611.727,
+      "tic": 2197.98,
+      "first3_peaks": [
+        [
+          546.948,
+          4.808
+        ],
+        [
+          690.081,
+          17.3
+        ],
+        [
+          686.68,
+          4.749
+        ]
+      ],
+      "peaks_sha1": "025836ff3543988fc2c18c35aa213ce4aa64e92e"
+    },
+    {
+      "index": 105,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=952",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 566.965393066406,
+      "n_peaks": 128,
+      "mz_min": 197.112,
+      "mz_max": 1078.54,
+      "base_peak_mz": 665.519,
+      "tic": 2771.039,
+      "first3_peaks": [
+        [
+          626.335,
+          6.238
+        ],
+        [
+          511.834,
+          16.217
+        ],
+        [
+          440.09,
+          4.674
+        ]
+      ],
+      "peaks_sha1": "cdaef310de9e120030c401ed7247ec52272114b7"
+    },
+    {
+      "index": 106,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=953",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 613.80322265625,
+      "n_peaks": 142,
+      "mz_min": 175.315,
+      "mz_max": 1206.653,
+      "base_peak_mz": 577.997,
+      "tic": 2950.709,
+      "first3_peaks": [
+        [
+          1206.653,
+          2.043
+        ],
+        [
+          542.792,
+          30.416
+        ],
+        [
+          212.286,
+          10.043
+        ]
+      ],
+      "peaks_sha1": "a2117a48941967281a6a3c7f532190e946e2c370"
+    },
+    {
+      "index": 107,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=954",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 826.876281738281,
+      "n_peaks": 73,
+      "mz_min": 255.241,
+      "mz_max": 1537.531,
+      "base_peak_mz": 779.567,
+      "tic": 1584.553,
+      "first3_peaks": [
+        [
+          690.307,
+          3.281
+        ],
+        [
+          462.162,
+          4.007
+        ],
+        [
+          1011.457,
+          9.946
+        ]
+      ],
+      "peaks_sha1": "2a40d47332f27bf82314f287eec1790db830f027"
+    },
+    {
+      "index": 108,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=956",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 529.612609863281,
+      "n_peaks": 136,
+      "mz_min": 173.027,
+      "mz_max": 1036.892,
+      "base_peak_mz": 673.536,
+      "tic": 2728.853,
+      "first3_peaks": [
+        [
+          428.114,
+          3.688
+        ],
+        [
+          383.258,
+          3.045
+        ],
+        [
+          512.854,
+          33.027
+        ]
+      ],
+      "peaks_sha1": "57379708e7411dd84fd894cc1630a87d058b16b0"
+    },
+    {
+      "index": 109,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=957",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 380.228820800781,
+      "n_peaks": 174,
+      "mz_min": 112.214,
+      "mz_max": 700.343,
+      "base_peak_mz": 371.15,
+      "tic": 3702.817,
+      "first3_peaks": [
+        [
+          604.397,
+          17.462
+        ],
+        [
+          112.214,
+          6.452
+        ],
+        [
+          454.073,
+          43.178
+        ]
+      ],
+      "peaks_sha1": "2dda006d066415fdfdceeae4276969c46b20cdb5"
+    },
+    {
+      "index": 110,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=963",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 590.294128417969,
+      "n_peaks": 128,
+      "mz_min": 225.161,
+      "mz_max": 1169.394,
+      "base_peak_mz": 454.038,
+      "tic": 2069.918,
+      "first3_peaks": [
+        [
+          692.702,
+          6.319
+        ],
+        [
+          388.265,
+          7.278
+        ],
+        [
+          590.76,
+          15.353
+        ]
+      ],
+      "peaks_sha1": "f6a235854b1dc6b23d22aaddd98227f1bfb664d7"
+    },
+    {
+      "index": 111,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=964",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 453.744873046875,
+      "n_peaks": 183,
+      "mz_min": 134.047,
+      "mz_max": 867.746,
+      "base_peak_mz": 444.619,
+      "tic": 3917.795,
+      "first3_peaks": [
+        [
+          437.036,
+          67.51
+        ],
+        [
+          583.343,
+          5.754
+        ],
+        [
+          495.607,
+          12.329
+        ]
+      ],
+      "peaks_sha1": "e54cc0da00ac5f199012f8ba90f863b7f7fedc8c"
+    },
+    {
+      "index": 112,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=966",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 490.735687255859,
+      "n_peaks": 162,
+      "mz_min": 147.253,
+      "mz_max": 959.651,
+      "base_peak_mz": 481.444,
+      "tic": 2924.039,
+      "first3_peaks": [
+        [
+          479.118,
+          82.258
+        ],
+        [
+          549.643,
+          21.348
+        ],
+        [
+          472.337,
+          77.68
+        ]
+      ],
+      "peaks_sha1": "39f2f5b3e8b531291d820abca0ab696813d1e575"
+    },
+    {
+      "index": 113,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=968",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 524.284057617188,
+      "n_peaks": 142,
+      "mz_min": 184.196,
+      "mz_max": 1026.616,
+      "base_peak_mz": 665.305,
+      "tic": 3072.147,
+      "first3_peaks": [
+        [
+          640.827,
+          8.796
+        ],
+        [
+          508.97,
+          4.044
+        ],
+        [
+          282.325,
+          5.401
+        ]
+      ],
+      "peaks_sha1": "e78149f381bc0a8af6ae3f9924cfcf94405b2f39"
+    },
+    {
+      "index": 114,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=969",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 665.84619140625,
+      "n_peaks": 83,
+      "mz_min": 225.904,
+      "mz_max": 1290.375,
+      "base_peak_mz": 647.812,
+      "tic": 1183.628,
+      "first3_peaks": [
+        [
+          1139.089,
+          6.497
+        ],
+        [
+          653.85,
+          3.512
+        ],
+        [
+          458.344,
+          34.058
+        ]
+      ],
+      "peaks_sha1": "508f1e23f1c5e3c269443c6c800ae3c59dfca2f2"
+    },
+    {
+      "index": 115,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=970",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 320.196075439453,
+      "n_peaks": 134,
+      "mz_min": 99.07,
+      "mz_max": 563.833,
+      "base_peak_mz": 373.442,
+      "tic": 6067.554,
+      "first3_peaks": [
+        [
+          280.419,
+          12.531
+        ],
+        [
+          262.003,
+          31.389
+        ],
+        [
+          214.093,
+          380.112
+        ]
+      ],
+      "peaks_sha1": "f1ff779b70847c51e9cbe951ed75ba02e42527c6"
+    },
+    {
+      "index": 116,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=972",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 783.868469238281,
+      "n_peaks": 78,
+      "mz_min": 240.092,
+      "mz_max": 1526.58,
+      "base_peak_mz": 719.566,
+      "tic": 1509.087,
+      "first3_peaks": [
+        [
+          845.851,
+          6.073
+        ],
+        [
+          709.859,
+          5.868
+        ],
+        [
+          736.742,
+          19.62
+        ]
+      ],
+      "peaks_sha1": "b3b95c64d66f2190cb68efcaef12ba34030ee11e"
+    },
+    {
+      "index": 117,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=973",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 425.476928710938,
+      "n_peaks": 140,
+      "mz_min": 129.201,
+      "mz_max": 1469.025,
+      "base_peak_mz": 524.558,
+      "tic": 4369.013,
+      "first3_peaks": [
+        [
+          365.546,
+          23.598
+        ],
+        [
+          323.023,
+          2.488
+        ],
+        [
+          178.016,
+          5.125
+        ]
+      ],
+      "peaks_sha1": "fcfe16841d20ae55816bce425bf31eed5e835498"
+    },
+    {
+      "index": 118,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=975",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 598.791320800781,
+      "n_peaks": 101,
+      "mz_min": 189.547,
+      "mz_max": 1174.658,
+      "base_peak_mz": 580.494,
+      "tic": 1699.45,
+      "first3_peaks": [
+        [
+          769.626,
+          40.17
+        ],
+        [
+          579.032,
+          10.826
+        ],
+        [
+          607.964,
+          12.628
+        ]
+      ],
+      "peaks_sha1": "33f6193830dc83c34b6970f14d39c73d9c835981"
+    },
+    {
+      "index": 119,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=976",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 394.796661376953,
+      "n_peaks": 138,
+      "mz_min": 141.165,
+      "mz_max": 688.94,
+      "base_peak_mz": 366.86,
+      "tic": 3458.907,
+      "first3_peaks": [
+        [
+          332.843,
+          12.082
+        ],
+        [
+          223.231,
+          10.254
+        ],
+        [
+          354.234,
+          43.927
+        ]
+      ],
+      "peaks_sha1": "9bdb41ba91c3737bfaa991b1a704dce4250b5cf7"
+    },
+    {
+      "index": 120,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=979",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 609.802001953125,
+      "n_peaks": 165,
+      "mz_min": 175.041,
+      "mz_max": 1138.543,
+      "base_peak_mz": 574.108,
+      "tic": 10216.492,
+      "first3_peaks": [
+        [
+          575.182,
+          60.176
+        ],
+        [
+          518.958,
+          12.149
+        ],
+        [
+          939.761,
+          12.475
+        ]
+      ],
+      "peaks_sha1": "e0a7a882e0456adf6d54f5a3fd61888a34512503"
+    },
+    {
+      "index": 121,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=981",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 653.806884765625,
+      "n_peaks": 91,
+      "mz_min": 292.099,
+      "mz_max": 1285.849,
+      "base_peak_mz": 635.69,
+      "tic": 1441.251,
+      "first3_peaks": [
+        [
+          623.312,
+          56.469
+        ],
+        [
+          626.227,
+          8.353
+        ],
+        [
+          612.884,
+          41.073
+        ]
+      ],
+      "peaks_sha1": "36e27297268cfc59950c747383b47059ab335fb8"
+    },
+    {
+      "index": 122,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=982",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 650.321472167969,
+      "n_peaks": 113,
+      "mz_min": 382.879,
+      "mz_max": 1428.581,
+      "base_peak_mz": 632.788,
+      "tic": 2103.596,
+      "first3_peaks": [
+        [
+          515.52,
+          47.241
+        ],
+        [
+          1167.588,
+          6.023
+        ],
+        [
+          903.583,
+          3.812
+        ]
+      ],
+      "peaks_sha1": "0b13ef151fdefbe24e0fede6a441f413dc83f70f"
+    },
+    {
+      "index": 123,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=983",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 813.069763183594,
+      "n_peaks": 70,
+      "mz_min": 257.344,
+      "mz_max": 1620.446,
+      "base_peak_mz": 765.007,
+      "tic": 1231.01,
+      "first3_peaks": [
+        [
+          643.767,
+          5.005
+        ],
+        [
+          712.217,
+          2.895
+        ],
+        [
+          786.622,
+          41.167
+        ]
+      ],
+      "peaks_sha1": "c9da009c7b89e4c5c43d58a042cb727590e8aef4"
+    },
+    {
+      "index": 124,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=987",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 582.778869628906,
+      "n_peaks": 127,
+      "mz_min": 179.103,
+      "mz_max": 1142.747,
+      "base_peak_mz": 564.626,
+      "tic": 1788.195,
+      "first3_peaks": [
+        [
+          603.201,
+          4.765
+        ],
+        [
+          492.757,
+          7.655
+        ],
+        [
+          686.883,
+          9.513
+        ]
+      ],
+      "peaks_sha1": "6c4863a67721cf327a68c5495a33fd7d2283a7d3"
+    },
+    {
+      "index": 125,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=991",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 657.310668945313,
+      "n_peaks": 123,
+      "mz_min": 216.582,
+      "mz_max": 1232.288,
+      "base_peak_mz": 806.146,
+      "tic": 2678.808,
+      "first3_peaks": [
+        [
+          595.076,
+          11.098
+        ],
+        [
+          603.966,
+          2.42
+        ],
+        [
+          472.279,
+          5.457
+        ]
+      ],
+      "peaks_sha1": "69a04eafb2c8aff72b05b05f493c5a6572aff6a7"
+    },
+    {
+      "index": 126,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=993",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 547.754089355469,
+      "n_peaks": 142,
+      "mz_min": 175.296,
+      "mz_max": 1072.295,
+      "base_peak_mz": 529.912,
+      "tic": 2633.44,
+      "first3_peaks": [
+        [
+          421.107,
+          19.942
+        ],
+        [
+          429.832,
+          3.929
+        ],
+        [
+          656.431,
+          1.781
+        ]
+      ],
+      "peaks_sha1": "c9134275adf8b99095d390b5e015cea3416fd702"
+    },
+    {
+      "index": 127,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=994",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 574.040161132813,
+      "n_peaks": 133,
+      "mz_min": 171.234,
+      "mz_max": 1134.705,
+      "base_peak_mz": 556.521,
+      "tic": 2152.095,
+      "first3_peaks": [
+        [
+          330.307,
+          2.715
+        ],
+        [
+          171.234,
+          16.277
+        ],
+        [
+          709.587,
+          36.506
+        ]
+      ],
+      "peaks_sha1": "348b280f1ebee019907f72d37e760d740300e78d"
+    },
+    {
+      "index": 128,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=995",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 538.746215820313,
+      "n_peaks": 199,
+      "mz_min": 169.177,
+      "mz_max": 995.96,
+      "base_peak_mz": 521.078,
+      "tic": 5364.09,
+      "first3_peaks": [
+        [
+          475.946,
+          2.183
+        ],
+        [
+          891.515,
+          65.033
+        ],
+        [
+          172.966,
+          13.229
+        ]
+      ],
+      "peaks_sha1": "98dee74611f0790e6f8954583e3b7e194041ad18"
+    },
+    {
+      "index": 129,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=998",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 653.056945800781,
+      "n_peaks": 151,
+      "mz_min": 195.207,
+      "mz_max": 1370.578,
+      "base_peak_mz": 634.633,
+      "tic": 2974.306,
+      "first3_peaks": [
+        [
+          558.151,
+          3.547
+        ],
+        [
+          599.572,
+          38.158
+        ],
+        [
+          618.887,
+          4.131
+        ]
+      ],
+      "peaks_sha1": "f4948605f390bc823c22ad1a2ca4027218bd255a"
+    },
+    {
+      "index": 130,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1000",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 719.594970703125,
+      "n_peaks": 75,
+      "mz_min": 243.245,
+      "mz_max": 1668.253,
+      "base_peak_mz": 679.264,
+      "tic": 1241.652,
+      "first3_peaks": [
+        [
+          684.072,
+          42.049
+        ],
+        [
+          676.981,
+          9.395
+        ],
+        [
+          874.871,
+          33.595
+        ]
+      ],
+      "peaks_sha1": "303a883a151931d64c8172590f5d857c947be653"
+    },
+    {
+      "index": 131,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1001",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 764.717651367188,
+      "n_peaks": 80,
+      "mz_min": 255.393,
+      "mz_max": 1738.03,
+      "base_peak_mz": 746.951,
+      "tic": 1175.011,
+      "first3_peaks": [
+        [
+          800.047,
+          5.915
+        ],
+        [
+          765.612,
+          35.555
+        ],
+        [
+          716.439,
+          3.784
+        ]
+      ],
+      "peaks_sha1": "dc76aae98bd55faf9d9d4198ca3ea5273aa6918e"
+    },
+    {
+      "index": 132,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1003",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 597.618347167969,
+      "n_peaks": 151,
+      "mz_min": 215.937,
+      "mz_max": 1171.698,
+      "base_peak_mz": 579.799,
+      "tic": 2284.26,
+      "first3_peaks": [
+        [
+          562.062,
+          33.814
+        ],
+        [
+          523.381,
+          14.307
+        ],
+        [
+          577.889,
+          8.289
+        ]
+      ],
+      "peaks_sha1": "c81bcb115a6d373fadc9d02c3dffaf937ff8bf9a"
+    },
+    {
+      "index": 133,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1005",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 557.593688964844,
+      "n_peaks": 148,
+      "mz_min": 175.198,
+      "mz_max": 990.5,
+      "base_peak_mz": 540.002,
+      "tic": 2706.903,
+      "first3_peaks": [
+        [
+          646.239,
+          23.916
+        ],
+        [
+          361.572,
+          5.791
+        ],
+        [
+          513.989,
+          6.921
+        ]
+      ],
+      "peaks_sha1": "e18fb492db1f930d213a1ee77d65092d01085e8f"
+    },
+    {
+      "index": 134,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1006",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 641.792358398438,
+      "n_peaks": 199,
+      "mz_min": 233.184,
+      "mz_max": 1279.416,
+      "base_peak_mz": 623.433,
+      "tic": 3434.596,
+      "first3_peaks": [
+        [
+          527.676,
+          8.507
+        ],
+        [
+          542.265,
+          3.184
+        ],
+        [
+          1081.641,
+          8.548
+        ]
+      ],
+      "peaks_sha1": "0af87444b57cb0eab02a502cf86f96a0ce514172"
+    },
+    {
+      "index": 135,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1008",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 434.737976074219,
+      "n_peaks": 209,
+      "mz_min": 127.167,
+      "mz_max": 829.057,
+      "base_peak_mz": 425.667,
+      "tic": 5353.175,
+      "first3_peaks": [
+        [
+          412.377,
+          7.162
+        ],
+        [
+          355.028,
+          6.572
+        ],
+        [
+          488.501,
+          5.505
+        ]
+      ],
+      "peaks_sha1": "48c8ad47bbc4e11c7014572522bd800a75f6da57"
+    },
+    {
+      "index": 136,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1010",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 727.368408203125,
+      "n_peaks": 62,
+      "mz_min": 214.153,
+      "mz_max": 1211.583,
+      "base_peak_mz": 709.743,
+      "tic": 875.318,
+      "first3_peaks": [
+        [
+          896.405,
+          11.888
+        ],
+        [
+          667.93,
+          7.207
+        ],
+        [
+          699.446,
+          2.409
+        ]
+      ],
+      "peaks_sha1": "19ce4f22b389b0ff853d1fcc9e6d4dcdffb2c892"
+    },
+    {
+      "index": 137,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1014",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 488.730285644531,
+      "n_peaks": 242,
+      "mz_min": 156.995,
+      "mz_max": 955.077,
+      "base_peak_mz": 630.346,
+      "tic": 7411.639,
+      "first3_peaks": [
+        [
+          634.12,
+          37.213
+        ],
+        [
+          476.752,
+          35.709
+        ],
+        [
+          555.941,
+          30.773
+        ]
+      ],
+      "peaks_sha1": "2f3edbe8246a944f331a7033998696e76474f2b7"
+    },
+    {
+      "index": 138,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1016",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 544.249145507813,
+      "n_peaks": 143,
+      "mz_min": 175.216,
+      "mz_max": 1053.533,
+      "base_peak_mz": 526.015,
+      "tic": 2677.535,
+      "first3_peaks": [
+        [
+          516.734,
+          25.19
+        ],
+        [
+          636.856,
+          24.803
+        ],
+        [
+          588.26,
+          6.343
+        ]
+      ],
+      "peaks_sha1": "b0c38c052ddb96423b90ca343ffeb695755e5e89"
+    },
+    {
+      "index": 139,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1017",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 635.968627929688,
+      "n_peaks": 128,
+      "mz_min": 189.192,
+      "mz_max": 1248.089,
+      "base_peak_mz": 612.438,
+      "tic": 2285.042,
+      "first3_peaks": [
+        [
+          386.119,
+          12.465
+        ],
+        [
+          543.25,
+          8.866
+        ],
+        [
+          498.282,
+          2.349
+        ]
+      ],
+      "peaks_sha1": "a9188d7e3637daf3b830abbac191371f5fd22692"
+    },
+    {
+      "index": 140,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1020",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 564.92431640625,
+      "n_peaks": 127,
+      "mz_min": 186.176,
+      "mz_max": 1494.465,
+      "base_peak_mz": 546.759,
+      "tic": 2170.059,
+      "first3_peaks": [
+        [
+          296.749,
+          16.282
+        ],
+        [
+          735.594,
+          3.413
+        ],
+        [
+          925.633,
+          5.649
+        ]
+      ],
+      "peaks_sha1": "b2bde47e15eadd5be550a9d603143ef774210855"
+    },
+    {
+      "index": 141,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1022",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 830.378173828125,
+      "n_peaks": 112,
+      "mz_min": 370.353,
+      "mz_max": 1466.496,
+      "base_peak_mz": 783.659,
+      "tic": 7740.909,
+      "first3_peaks": [
+        [
+          897.329,
+          32.005
+        ],
+        [
+          768.469,
+          2.827
+        ],
+        [
+          581.238,
+          7.769
+        ]
+      ],
+      "peaks_sha1": "4ad310573d0b651d4ab6632d1a487659806d5b6c"
+    },
+    {
+      "index": 142,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1026",
+      "scan": null,
+      "charge": 3,
+      "precursor_mz": 576.593566894531,
+      "n_peaks": 155,
+      "mz_min": 183.945,
+      "mz_max": 1131.361,
+      "base_peak_mz": 558.463,
+      "tic": 2702.558,
+      "first3_peaks": [
+        [
+          543.748,
+          13.971
+        ],
+        [
+          577.889,
+          14.578
+        ],
+        [
+          493.691,
+          36.054
+        ]
+      ],
+      "peaks_sha1": "74655f15080c954f1aa53e3b1a8a3fe88a65ee3d"
+    },
+    {
+      "index": 143,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1029",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 953.453063964844,
+      "n_peaks": 37,
+      "mz_min": 372.449,
+      "mz_max": 1885.199,
+      "base_peak_mz": 937.149,
+      "tic": 566.816,
+      "first3_peaks": [
+        [
+          919.588,
+          24.874
+        ],
+        [
+          953.692,
+          17.819
+        ],
+        [
+          1085.744,
+          10.525
+        ]
+      ],
+      "peaks_sha1": "5f1503feb3b0f08a8a5e00b3d1186287200d578a"
+    },
+    {
+      "index": 144,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1031",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 381.226013183594,
+      "n_peaks": 195,
+      "mz_min": 97.328,
+      "mz_max": 709.261,
+      "base_peak_mz": 372.175,
+      "tic": 4436.327,
+      "first3_peaks": [
+        [
+          171.43,
+          3.055
+        ],
+        [
+          202.257,
+          11.922
+        ],
+        [
+          267.306,
+          5.597
+        ]
+      ],
+      "peaks_sha1": "48db1822469bc7ad70ba0aa5b31eda3e71cb4263"
+    },
+    {
+      "index": 145,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1038",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 848.875732421875,
+      "n_peaks": 73,
+      "mz_min": 268.085,
+      "mz_max": 1676.789,
+      "base_peak_mz": 801.938,
+      "tic": 1195.356,
+      "first3_peaks": [
+        [
+          821.729,
+          10.511
+        ],
+        [
+          571.252,
+          9.025
+        ],
+        [
+          1242.664,
+          7.732
+        ]
+      ],
+      "peaks_sha1": "ecb71f812146661d0b1555b95b83fe214ae82865"
+    },
+    {
+      "index": 146,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1040",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 588.763000488281,
+      "n_peaks": 156,
+      "mz_min": 189.111,
+      "mz_max": 1154.336,
+      "base_peak_mz": 570.799,
+      "tic": 2682.998,
+      "first3_peaks": [
+        [
+          540.159,
+          7.322
+        ],
+        [
+          243.24,
+          3.448
+        ],
+        [
+          571.682,
+          72.438
+        ]
+      ],
+      "peaks_sha1": "7306b2d07e49a643ca4fcff43a822ec192e82a5a"
+    },
+    {
+      "index": 147,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1047",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 366.226928710938,
+      "n_peaks": 172,
+      "mz_min": 117.265,
+      "mz_max": 711.375,
+      "base_peak_mz": 357.234,
+      "tic": 3991.994,
+      "first3_peaks": [
+        [
+          711.375,
+          10.151
+        ],
+        [
+          336.091,
+          39.544
+        ],
+        [
+          224.278,
+          9.671
+        ]
+      ],
+      "peaks_sha1": "ac2d899c6804dbcfa3da237bebaa4c9fc6389016"
+    },
+    {
+      "index": 148,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1048",
+      "scan": null,
+      "charge": 4,
+      "precursor_mz": 834.873107910156,
+      "n_peaks": 91,
+      "mz_min": 252.022,
+      "mz_max": 1535.136,
+      "base_peak_mz": 783.732,
+      "tic": 2895.408,
+      "first3_peaks": [
+        [
+          960.292,
+          38.579
+        ],
+        [
+          761.654,
+          18.142
+        ],
+        [
+          799.71,
+          2.783
+        ]
+      ],
+      "peaks_sha1": "332640407f68bd712c0ba7056fbd9847f35ee87f"
+    },
+    {
+      "index": 149,
+      "title": "id=PXD002047;TCGA-AA-A02O-01A-23_W_VU_20130205_A0218_10A_R_FR05.mzML;controllerType=0 controllerNumber=1 scan=1051",
+      "scan": null,
+      "charge": 2,
+      "precursor_mz": 604.803344726563,
+      "n_peaks": 169,
+      "mz_min": 175.223,
+      "mz_max": 1187.581,
+      "base_peak_mz": 595.997,
+      "tic": 3571.453,
+      "first3_peaks": [
+        [
+          539.743,
+          7.932
+        ],
+        [
+          393.346,
+          9.927
+        ],
+        [
+          921.486,
+          11.049
+        ]
+      ],
+      "peaks_sha1": "c44a83f5790e1ed5f49ab0c83d2b645fc3b978ec"
+    }
+  ]
+}

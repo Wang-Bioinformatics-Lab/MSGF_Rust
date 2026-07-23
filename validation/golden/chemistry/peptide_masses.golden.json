@@ -1,0 +1,108 @@
+{
+  "note": "neutral monoisotopic mass and [M+nH]n+ for test peptides; calibrants carry published_mh",
+  "compare": {
+    "kind": "float",
+    "assert": "abs",
+    "tol": 0.0001
+  },
+  "peptides": [
+    {
+      "sequence": "MRFA",
+      "length": 4,
+      "neutral_mass": 523.2576880572,
+      "mz": {
+        "1+": 524.2649645240999,
+        "2+": 262.6361204955,
+        "3+": 175.4265058193
+      },
+      "published_mh": 524.2649,
+      "source": "common QC calibrant (Met-Arg-Phe-Ala)"
+    },
+    {
+      "sequence": "RPPGFSPFR",
+      "length": 9,
+      "neutral_mass": 1059.5613982497998,
+      "mz": {
+        "1+": 1060.5686747167,
+        "2+": 530.7879755917999,
+        "3+": 354.19440921683326
+      },
+      "published_mh": 1060.5692,
+      "source": "Bradykinin, monoisotopic [M+H]+"
+    },
+    {
+      "sequence": "DRVYIHPF",
+      "length": 8,
+      "neutral_mass": 1045.5345147976998,
+      "mz": {
+        "1+": 1046.5417912645999,
+        "2+": 523.7745338657498,
+        "3+": 349.5187813994666
+      },
+      "published_mh": 1046.5418,
+      "source": "Angiotensin II, monoisotopic [M+H]+"
+    },
+    {
+      "sequence": "EGVNDNEEGFFSAR",
+      "length": 14,
+      "neutral_mass": 1569.6695643039,
+      "mz": {
+        "1+": 1570.6768407708,
+        "2+": 785.8420586188499,
+        "3+": 524.2304645682
+      },
+      "published_mh": 1570.6774,
+      "source": "Glu-Fibrinopeptide B, monoisotopic [M+H]+"
+    },
+    {
+      "sequence": "PEPTIDE",
+      "length": 7,
+      "neutral_mass": 799.3599640586,
+      "mz": {
+        "1+": 800.3672405254999,
+        "2+": 400.6872584962,
+        "3+": 267.46059781976663
+      }
+    },
+    {
+      "sequence": "SAMPLER",
+      "length": 7,
+      "neutral_mass": 802.4007234753,
+      "mz": {
+        "1+": 803.4079999421999,
+        "2+": 402.20763820455,
+        "3+": 268.47418429199996
+      }
+    },
+    {
+      "sequence": "ELVISLIVES",
+      "length": 10,
+      "neutral_mass": 1100.6328914348999,
+      "mz": {
+        "1+": 1101.6401679018,
+        "2+": 551.3237221843499,
+        "3+": 367.88490694519993
+      }
+    },
+    {
+      "sequence": "HPLC",
+      "length": 4,
+      "neutral_mass": 468.21548889250005,
+      "mz": {
+        "1+": 469.22276535940006,
+        "2+": 235.11502091315003,
+        "3+": 157.07910609773336
+      }
+    },
+    {
+      "sequence": "ACDEFGHIKLMNPQRSTVWY",
+      "length": 20,
+      "neutral_mass": 2394.1249063459,
+      "mz": {
+        "1+": 2395.1321828128,
+        "2+": 1198.06972963985,
+        "3+": 799.0489119155333
+      }
+    }
+  ]
+}

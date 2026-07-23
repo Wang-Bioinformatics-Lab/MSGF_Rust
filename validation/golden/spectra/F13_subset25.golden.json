@@ -1,0 +1,689 @@
+{
+  "file": "F13_subset25.mgf",
+  "format": "mgf",
+  "n_spectra": 25,
+  "total_peaks": 999,
+  "rolling_peak_sha1": "eff1ced5db38d0e735d3fd5d53063a497580f2a3",
+  "stored_full": 25,
+  "compare": {
+    "per_spectrum": "exact",
+    "note": "n_peaks/charge/precursor_mz exact; peaks_sha1 must match canonical format"
+  },
+  "spectra": [
+    {
+      "index": 0,
+      "title": "scan=144",
+      "scan": "144",
+      "charge": 2,
+      "precursor_mz": 319.7108,
+      "n_peaks": 25,
+      "mz_min": 105.01811,
+      "mz_max": 567.57825,
+      "base_peak_mz": 319.21802,
+      "tic": 6936.6273,
+      "first3_peaks": [
+        [
+          105.01811,
+          73.3644
+        ],
+        [
+          105.23659,
+          76.85309
+        ],
+        [
+          118.77335,
+          66.16116
+        ]
+      ],
+      "peaks_sha1": "57c8a8dda7c2bdc8c779c945db8d35b2e37293db"
+    },
+    {
+      "index": 1,
+      "title": "scan=1664",
+      "scan": "1664",
+      "charge": 2,
+      "precursor_mz": 348.20612,
+      "n_peaks": 45,
+      "mz_min": 101.08355,
+      "mz_max": 689.6839,
+      "base_peak_mz": 129.13779,
+      "tic": 9400.8444,
+      "first3_peaks": [
+        [
+          101.08355,
+          78.32936
+        ],
+        [
+          102.10428,
+          70.00354
+        ],
+        [
+          108.78371,
+          93.27261
+        ]
+      ],
+      "peaks_sha1": "af088ac79aba281d4e2b5f540506b7ced26c0edc"
+    },
+    {
+      "index": 2,
+      "title": "scan=1688",
+      "scan": "1688",
+      "charge": 2,
+      "precursor_mz": 304.6904,
+      "n_peaks": 52,
+      "mz_min": 112.086716,
+      "mz_max": 611.381,
+      "base_peak_mz": 129.13782,
+      "tic": 17724.1665,
+      "first3_peaks": [
+        [
+          112.08672,
+          332.05197
+        ],
+        [
+          114.01687,
+          65.73345
+        ],
+        [
+          115.08704,
+          168.21306
+        ]
+      ],
+      "peaks_sha1": "6e68201ecf54b30defc67389bf595441ee838cae"
+    },
+    {
+      "index": 3,
+      "title": "scan=1703",
+      "scan": "1703",
+      "charge": 3,
+      "precursor_mz": 335.2278,
+      "n_peaks": 35,
+      "mz_min": 100.056496,
+      "mz_max": 1017.17126,
+      "base_peak_mz": 335.22708,
+      "tic": 10247.9132,
+      "first3_peaks": [
+        [
+          100.0565,
+          74.70003
+        ],
+        [
+          100.26101,
+          64.28383
+        ],
+        [
+          101.94197,
+          77.95589
+        ]
+      ],
+      "peaks_sha1": "1edfdc0287e067bb3a1cb1d86ac5810bc2fcf7ab"
+    },
+    {
+      "index": 4,
+      "title": "scan=1709",
+      "scan": "1709",
+      "charge": 2,
+      "precursor_mz": 514.82996,
+      "n_peaks": 37,
+      "mz_min": 107.97386,
+      "mz_max": 1000.39294,
+      "base_peak_mz": 128.13434,
+      "tic": 9324.4239,
+      "first3_peaks": [
+        [
+          107.97386,
+          59.61603
+        ],
+        [
+          109.36311,
+          79.86064
+        ],
+        [
+          120.02168,
+          81.62766
+        ]
+      ],
+      "peaks_sha1": "30578970f5cd6442b9b5315531e56eb3c105cf21"
+    },
+    {
+      "index": 5,
+      "title": "scan=1711",
+      "scan": "1711",
+      "charge": 2,
+      "precursor_mz": 326.70334,
+      "n_peaks": 37,
+      "mz_min": 109.34402,
+      "mz_max": 622.7534,
+      "base_peak_mz": 129.13777,
+      "tic": 10252.6555,
+      "first3_peaks": [
+        [
+          109.34402,
+          82.07922
+        ],
+        [
+          115.08663,
+          83.4909
+        ],
+        [
+          116.07053,
+          191.4403
+        ]
+      ],
+      "peaks_sha1": "b5059e00e8ee45b76fbe0a9efbbd9ebffc78e183"
+    },
+    {
+      "index": 6,
+      "title": "scan=1746",
+      "scan": "1746",
+      "charge": 2,
+      "precursor_mz": 365.743,
+      "n_peaks": 37,
+      "mz_min": 106.17647,
+      "mz_max": 691.3642,
+      "base_peak_mz": 129.13782,
+      "tic": 7033.7207,
+      "first3_peaks": [
+        [
+          106.17647,
+          71.78477
+        ],
+        [
+          112.08691,
+          126.04858
+        ],
+        [
+          115.17646,
+          64.01901
+        ]
+      ],
+      "peaks_sha1": "f60ec9d3982b1c04a2b821beaaf4ced4e31b1e46"
+    },
+    {
+      "index": 7,
+      "title": "scan=1754",
+      "scan": "1754",
+      "charge": 2,
+      "precursor_mz": 308.7217,
+      "n_peaks": 37,
+      "mz_min": 112.08751,
+      "mz_max": 499.94205,
+      "base_peak_mz": 129.1378,
+      "tic": 9565.5825,
+      "first3_peaks": [
+        [
+          112.08751,
+          93.63805
+        ],
+        [
+          116.07056,
+          128.98747
+        ],
+        [
+          117.25635,
+          83.14204
+        ]
+      ],
+      "peaks_sha1": "93c5381091bc005e53fa3ffa4f5df4f8d2192fad"
+    },
+    {
+      "index": 8,
+      "title": "scan=1764",
+      "scan": "1764",
+      "charge": 2,
+      "precursor_mz": 372.75064,
+      "n_peaks": 39,
+      "mz_min": 112.08665,
+      "mz_max": 735.1346,
+      "base_peak_mz": 129.13771,
+      "tic": 9377.7363,
+      "first3_peaks": [
+        [
+          112.08665,
+          204.56664
+        ],
+        [
+          116.07077,
+          127.07134
+        ],
+        [
+          123.20051,
+          65.80714
+        ]
+      ],
+      "peaks_sha1": "76750064c1445cb783f6e50b6e5c49c97ffd317e"
+    },
+    {
+      "index": 9,
+      "title": "scan=1776",
+      "scan": "1776",
+      "charge": 2,
+      "precursor_mz": 424.26413,
+      "n_peaks": 30,
+      "mz_min": 100.28989,
+      "mz_max": 721.96655,
+      "base_peak_mz": 129.13783,
+      "tic": 5643.3056,
+      "first3_peaks": [
+        [
+          100.28989,
+          73.6734
+        ],
+        [
+          109.15631,
+          73.19833
+        ],
+        [
+          112.67738,
+          87.93922
+        ]
+      ],
+      "peaks_sha1": "6f2ba9d081f8cc8f40d2d6bc470fc7dc290b790b"
+    },
+    {
+      "index": 10,
+      "title": "scan=1801",
+      "scan": "1801",
+      "charge": 2,
+      "precursor_mz": 522.3116,
+      "n_peaks": 27,
+      "mz_min": 126.12775,
+      "mz_max": 1023.4228,
+      "base_peak_mz": 126.12775,
+      "tic": 8796.695,
+      "first3_peaks": [
+        [
+          126.12775,
+          1924.4452
+        ],
+        [
+          127.13123,
+          691.4893
+        ],
+        [
+          128.13441,
+          739.657
+        ]
+      ],
+      "peaks_sha1": "851e11d9e7848ab4b78c4477d07dbd16bdd79f77"
+    },
+    {
+      "index": 11,
+      "title": "scan=1810",
+      "scan": "1810",
+      "charge": 2,
+      "precursor_mz": 308.72153,
+      "n_peaks": 53,
+      "mz_min": 111.335915,
+      "mz_max": 629.30145,
+      "base_peak_mz": 129.13773,
+      "tic": 24281.7145,
+      "first3_peaks": [
+        [
+          111.33591,
+          65.62968
+        ],
+        [
+          112.08702,
+          252.6828
+        ],
+        [
+          112.7397,
+          68.39975
+        ]
+      ],
+      "peaks_sha1": "3a2a27a738d2c8f177625a9feb67fd52b83aac20"
+    },
+    {
+      "index": 12,
+      "title": "scan=1817",
+      "scan": "1817",
+      "charge": 2,
+      "precursor_mz": 359.24536,
+      "n_peaks": 43,
+      "mz_min": 108.2388,
+      "mz_max": 702.2213,
+      "base_peak_mz": 129.13782,
+      "tic": 9899.6112,
+      "first3_peaks": [
+        [
+          108.2388,
+          71.18058
+        ],
+        [
+          112.08607,
+          90.00246
+        ],
+        [
+          114.77944,
+          88.6101
+        ]
+      ],
+      "peaks_sha1": "50741480ecc4e90b719bf287a14260d438c291f0"
+    },
+    {
+      "index": 13,
+      "title": "scan=1850",
+      "scan": "1850",
+      "charge": 2,
+      "precursor_mz": 432.77356,
+      "n_peaks": 26,
+      "mz_min": 112.69224,
+      "mz_max": 835.3775,
+      "base_peak_mz": 129.1378,
+      "tic": 9648.1172,
+      "first3_peaks": [
+        [
+          112.69224,
+          76.49502
+        ],
+        [
+          121.97374,
+          75.51405
+        ],
+        [
+          126.12772,
+          1290.1261
+        ]
+      ],
+      "peaks_sha1": "67bed383fecd095a0329d2ca4fff12d4100ddaa6"
+    },
+    {
+      "index": 14,
+      "title": "scan=1866",
+      "scan": "1866",
+      "charge": 3,
+      "precursor_mz": 397.60812,
+      "n_peaks": 43,
+      "mz_min": 101.95977,
+      "mz_max": 1190.0476,
+      "base_peak_mz": 397.60748,
+      "tic": 16529.5171,
+      "first3_peaks": [
+        [
+          101.95977,
+          85.31384
+        ],
+        [
+          114.86414,
+          79.45393
+        ],
+        [
+          116.41182,
+          73.54793
+        ]
+      ],
+      "peaks_sha1": "5a10537b9e1750bfb9b19b716c42f02622ed43d2"
+    },
+    {
+      "index": 15,
+      "title": "scan=1907",
+      "scan": "1907",
+      "charge": 4,
+      "precursor_mz": 340.95877,
+      "n_peaks": 46,
+      "mz_min": 102.13454,
+      "mz_max": 1325.5468,
+      "base_peak_mz": 340.958,
+      "tic": 12881.6348,
+      "first3_peaks": [
+        [
+          102.13454,
+          67.82213
+        ],
+        [
+          107.76077,
+          74.94838
+        ],
+        [
+          110.0713,
+          899.075
+        ]
+      ],
+      "peaks_sha1": "fcd017b921b619055f106e44392fc66883cd5398"
+    },
+    {
+      "index": 16,
+      "title": "scan=1929",
+      "scan": "1929",
+      "charge": 2,
+      "precursor_mz": 359.76593,
+      "n_peaks": 31,
+      "mz_min": 110.05198,
+      "mz_max": 666.9372,
+      "base_peak_mz": 129.1378,
+      "tic": 18000.1211,
+      "first3_peaks": [
+        [
+          110.05198,
+          76.2502
+        ],
+        [
+          124.66599,
+          69.10184
+        ],
+        [
+          126.12779,
+          2340.706
+        ]
+      ],
+      "peaks_sha1": "63a8aace5ce35f8af58466c673fb78469d3f58f0"
+    },
+    {
+      "index": 17,
+      "title": "scan=1953",
+      "scan": "1953",
+      "charge": 3,
+      "precursor_mz": 408.26517,
+      "n_peaks": 39,
+      "mz_min": 120.31277,
+      "mz_max": 1208.9426,
+      "base_peak_mz": 408.2645,
+      "tic": 22532.5342,
+      "first3_peaks": [
+        [
+          120.31277,
+          79.06457
+        ],
+        [
+          126.12779,
+          662.2823
+        ],
+        [
+          127.13155,
+          171.22258
+        ]
+      ],
+      "peaks_sha1": "2924cf776daa8ef541cd28b46c92b1066c0e0ce1"
+    },
+    {
+      "index": 18,
+      "title": "scan=1975",
+      "scan": "1975",
+      "charge": 2,
+      "precursor_mz": 404.74817,
+      "n_peaks": 42,
+      "mz_min": 112.0873,
+      "mz_max": 757.21454,
+      "base_peak_mz": 129.13777,
+      "tic": 10464.2275,
+      "first3_peaks": [
+        [
+          112.0873,
+          113.11814
+        ],
+        [
+          116.0705,
+          102.92461
+        ],
+        [
+          126.12771,
+          625.17
+        ]
+      ],
+      "peaks_sha1": "c96db73811f6115b7a3dc40ad3a6a8650aad3fcb"
+    },
+    {
+      "index": 19,
+      "title": "scan=1977",
+      "scan": "1977",
+      "charge": 2,
+      "precursor_mz": 388.2766,
+      "n_peaks": 39,
+      "mz_min": 101.79616,
+      "mz_max": 659.432,
+      "base_peak_mz": 129.13766,
+      "tic": 14167.7829,
+      "first3_peaks": [
+        [
+          101.79616,
+          80.12975
+        ],
+        [
+          102.22263,
+          81.38111
+        ],
+        [
+          107.07692,
+          66.05824
+        ]
+      ],
+      "peaks_sha1": "525f32ba0d625f2e91283890011a7260e4cb5f75"
+    },
+    {
+      "index": 20,
+      "title": "scan=1980",
+      "scan": "1980",
+      "charge": 2,
+      "precursor_mz": 403.28198,
+      "n_peaks": 54,
+      "mz_min": 108.829124,
+      "mz_max": 781.12134,
+      "base_peak_mz": 129.13776,
+      "tic": 29105.5298,
+      "first3_peaks": [
+        [
+          108.82912,
+          75.18264
+        ],
+        [
+          117.24702,
+          61.25401
+        ],
+        [
+          119.51088,
+          85.70335
+        ]
+      ],
+      "peaks_sha1": "56ba7222037db36b436877bc2eaf21d8753d00ee"
+    },
+    {
+      "index": 21,
+      "title": "scan=1985",
+      "scan": "1985",
+      "charge": 2,
+      "precursor_mz": 359.76596,
+      "n_peaks": 51,
+      "mz_min": 104.92099,
+      "mz_max": 659.6432,
+      "base_peak_mz": 129.1378,
+      "tic": 50834.7485,
+      "first3_peaks": [
+        [
+          104.92099,
+          76.52396
+        ],
+        [
+          116.604,
+          68.9904
+        ],
+        [
+          120.35677,
+          65.58386
+        ]
+      ],
+      "peaks_sha1": "6855c8b502e88eeaa4480d70d02f6ce7498afab1"
+    },
+    {
+      "index": 22,
+      "title": "scan=2000",
+      "scan": "2000",
+      "charge": 2,
+      "precursor_mz": 416.78738,
+      "n_peaks": 37,
+      "mz_min": 118.402466,
+      "mz_max": 778.8424,
+      "base_peak_mz": 129.13788,
+      "tic": 12891.0312,
+      "first3_peaks": [
+        [
+          118.40247,
+          80.55817
+        ],
+        [
+          123.9836,
+          78.18475
+        ],
+        [
+          126.12782,
+          1491.2764
+        ]
+      ],
+      "peaks_sha1": "ab6f75cf8d15551e11ea6cd0c11dee384f4f0aae"
+    },
+    {
+      "index": 23,
+      "title": "scan=2013",
+      "scan": "2013",
+      "charge": 2,
+      "precursor_mz": 410.2899,
+      "n_peaks": 45,
+      "mz_min": 103.089424,
+      "mz_max": 708.75073,
+      "base_peak_mz": 129.1379,
+      "tic": 28795.3018,
+      "first3_peaks": [
+        [
+          103.08942,
+          74.2134
+        ],
+        [
+          108.66094,
+          68.75575
+        ],
+        [
+          126.12786,
+          4546.0913
+        ]
+      ],
+      "peaks_sha1": "b791db180c240bab834582f278f2907c64a430c6"
+    },
+    {
+      "index": 24,
+      "title": "scan=2018",
+      "scan": "2018",
+      "charge": 3,
+      "precursor_mz": 391.2578,
+      "n_peaks": 49,
+      "mz_min": 105.36545,
+      "mz_max": 1073.926,
+      "base_peak_mz": 391.2566,
+      "tic": 18397.4563,
+      "first3_peaks": [
+        [
+          105.36545,
+          68.83116
+        ],
+        [
+          111.1268,
+          74.35752
+        ],
+        [
+          113.12573,
+          75.23699
+        ]
+      ],
+      "peaks_sha1": "2dc4d684a02c0a82809c96c9f7f550b4899d4930"
+    }
+  ]
+}

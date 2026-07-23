@@ -1,0 +1,63 @@
+{
+  "note": "MS-GF+ scoring-model inventory; Rust msgf-scorer must read the same identity tuple",
+  "header_format": "4-byte prefix, then 4 length-prefixed UTF-16BE strings",
+  "compare": {
+    "size": "exact",
+    "sha256": "exact",
+    "identity": "exact"
+  },
+  "models": [
+    {
+      "file": "CID_HighRes_Tryp.param",
+      "size": 314405,
+      "sha256": "20e5b03b3b21a7a3823fbfabe666a68af19dc5d762e6ecd0f4b513a67ee35b81",
+      "header_prefix_hex": "00001b95",
+      "identity": {
+        "activation": "CID",
+        "resolution_or_instrument": "HighRes",
+        "enzyme": "Tryp",
+        "protocol": "(default)"
+      },
+      "binary_data_offset": 36
+    },
+    {
+      "file": "ETD_HighRes_Tryp.param",
+      "size": 269788,
+      "sha256": "8d39e0477798c74e26367d6a8feb81fa201cd27ad874daa7a5ecd85dd1032495",
+      "header_prefix_hex": "00001b95",
+      "identity": {
+        "activation": "ETD",
+        "resolution_or_instrument": "HighRes",
+        "enzyme": "Tryp",
+        "protocol": "(default)"
+      },
+      "binary_data_offset": 36
+    },
+    {
+      "file": "HCD_HighRes_Tryp.param",
+      "size": 429625,
+      "sha256": "d287bd9c500ed3d7da42b594d565c90d386dd10ea32399c6ce64485492ce5f47",
+      "header_prefix_hex": "00001b95",
+      "identity": {
+        "activation": "HCD",
+        "resolution_or_instrument": "HighRes",
+        "enzyme": "Tryp",
+        "protocol": "(default)"
+      },
+      "binary_data_offset": 36
+    },
+    {
+      "file": "HCD_QExactive_Tryp.param",
+      "size": 741431,
+      "sha256": "03c63466efea4e5f44a953ea5761c9cd10b8edfa05d143045fc8974f46fb53e7",
+      "header_prefix_hex": "00001b95",
+      "identity": {
+        "activation": "HCD",
+        "resolution_or_instrument": "QExactive",
+        "enzyme": "Tryp",
+        "protocol": "(default)"
+      },
+      "binary_data_offset": 40
+    }
+  ]
+}

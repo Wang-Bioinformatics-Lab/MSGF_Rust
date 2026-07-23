@@ -1,0 +1,19 @@
+{
+  "note": "atomic monoisotopic masses + derived constants; Rust msgf-chem must reproduce exactly",
+  "compare": {
+    "kind": "float",
+    "assert": "abs",
+    "tol": 1e-06
+  },
+  "atoms": {
+    "H": 1.0078250319,
+    "C": 12.0,
+    "N": 14.0030740052,
+    "O": 15.9949146221,
+    "S": 31.97207073,
+    "P": 30.973761512
+  },
+  "proton": 1.0072764669,
+  "electron": 0.0005485799,
+  "H2O": 18.0105646859
+}

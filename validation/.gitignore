@@ -1,0 +1,13 @@
+# Reference inputs are UC-licensed and reproducible — never commit them.
+# Recreate with ./fetch_reference_data.sh
+data/
+
+# Reference jar (UC-licensed) — fetch with ./fetch_reference_data.sh --jar
+reference/MSGFPlus.jar
+reference/MSGFPlus.jar.source
+
+# Bulky raw MS-GF+ result artifacts. We commit only the normalized oracle (*.golden.json)
+# and its provenance, not the wholesale mzid/tsv copies.
+golden/*.mzid
+golden/*.tsv
+golden/models/*.model.txt

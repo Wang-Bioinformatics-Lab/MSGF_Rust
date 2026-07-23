@@ -1,0 +1,7 @@
+tag=iprg2013_F13
+jar=MSGFPlus.jar   jar_source=https://github.com/MSGFPlus/msgfplus/releases/download/v2024.03.26/MSGFPlus_v20240326.zip
+spectra=F13.mgf
+db=iprg2013_human.fasta
+mods=iprg-2013_Mods.txt
+params: -inst 1 -m 3 -e 1 -t 10ppm -tda 1
+java=openjdk version "17.0.18-internal" 2026-01-20
