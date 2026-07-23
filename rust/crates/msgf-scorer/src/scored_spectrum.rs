@@ -70,9 +70,11 @@ pub fn peak_by_mass(peaks: &[RankedPeak], mz: f32, tol_da: f32) -> Option<&Ranke
 /// A scored spectrum: a model plus a ranked peak list for one precursor.
 pub struct ScoredSpectrum<'a> {
     model: &'a ScoringModel,
-    charge: i32,
     parent_mass: f32,
     peaks: Vec<RankedPeak>, // sorted by mz ascending
+    /// Partition index serving each segment. Constant per spectrum, so it is precomputed once
+    /// rather than re-running the partition `floor` lookup for every nominal mass scored.
+    seg_partition: Vec<Option<usize>>,
 }
 
 impl<'a> ScoredSpectrum<'a> {
@@ -84,11 +86,14 @@ impl<'a> ScoredSpectrum<'a> {
         mut peaks: Vec<RankedPeak>,
     ) -> Self {
         peaks.sort_by(|a, b| a.mz.partial_cmp(&b.mz).unwrap());
+        let seg_partition = (0..model.num_segments)
+            .map(|seg| Self::partition_for(model, charge, parent_mass, seg))
+            .collect();
         Self {
             model,
-            charge,
             parent_mass,
             peaks,
+            seg_partition,
         }
     }
 
@@ -103,11 +108,10 @@ impl<'a> ScoredSpectrum<'a> {
     }
 
     /// TreeSet `floor` over partitions by (charge, seg, parent_mass): greatest partition ≤ key.
-    fn floor(&self, charge: i32, seg: i32, mass: f32) -> Option<usize> {
+    fn floor(model: &ScoringModel, charge: i32, seg: i32, mass: f32) -> Option<usize> {
         let mut best = None;
-        for (i, p) in self.model.partitions.iter().enumerate() {
-            let le = (p.charge, p.seg, p.parent_mass) <= (charge, seg, mass);
-            if le {
+        for (i, p) in model.partitions.iter().enumerate() {
+            if (p.charge, p.seg, p.parent_mass) <= (charge, seg, mass) {
                 best = Some(i);
             }
         }
@@ -115,18 +119,23 @@ impl<'a> ScoredSpectrum<'a> {
     }
 
     /// `getPartition(charge, parentMass, seg)` — the trained partition serving this segment.
-    fn partition_index(&self, seg: i32) -> Option<usize> {
-        match self.floor(self.charge, seg, self.parent_mass) {
+    fn partition_for(
+        model: &ScoringModel,
+        charge: i32,
+        parent_mass: f32,
+        seg: i32,
+    ) -> Option<usize> {
+        match Self::floor(model, charge, seg, parent_mass) {
             None => {
-                let first_charge = self.model.partitions.first()?.charge;
-                self.floor(first_charge, seg, self.parent_mass)
+                let first_charge = model.partitions.first()?.charge;
+                Self::floor(model, first_charge, seg, parent_mass)
             }
             Some(i) => {
-                let matched_charge = self.model.partitions[i].charge;
-                if matched_charge == self.charge {
+                let matched_charge = model.partitions[i].charge;
+                if matched_charge == charge {
                     Some(i)
                 } else {
-                    self.floor(matched_charge, seg, self.parent_mass)
+                    Self::floor(model, matched_charge, seg, parent_mass)
                 }
             }
         }
@@ -137,7 +146,7 @@ impl<'a> ScoredSpectrum<'a> {
         let node_mass = scaling::nominal_to_mass(nominal_mass);
         let mut score = 0.0f32;
         for seg in 0..self.model.num_segments {
-            let Some(part_idx) = self.partition_index(seg) else {
+            let Some(part_idx) = self.seg_partition[seg as usize] else {
                 continue;
             };
             for ion in &self.model.frag_off[part_idx] {

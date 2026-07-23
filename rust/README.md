@@ -20,6 +20,25 @@ cargo fmt --all
 | `msgf-cli` | ⬜ later | end-to-end differential test vs the F13 golden |
 | `msgf-search` | ⬜ later | Sage-inspired search engine |
 
+## Benchmarks
+
+`cargo bench -p msgf-scorer` (criterion; needs `validation/data/`). Current single-threaded
+numbers on the F13 high-res set (1,406 spectra, HCD/QExactive model), measuring the per-spectrum
+work a search does once — preprocess + build scored spectrum + compute `prefixScore`/`suffixScore`:
+
+| Benchmark | Time |
+|---|---|
+| `read_param_model` (one-time model load) | ~0.78 ms |
+| `preprocess_one` (per spectrum) | ~6.3 µs |
+| `score_one_spectrum` (preprocess + node scores) | ~0.81 ms |
+| `preprocess_and_score_all` (1,406 spectra) | **~1.16 s → ~1,210 spectra/s** |
+
+Reference: MS-GF+ (Java, JIT-warm) does the identical work at **~770 spectra/s** on this machine,
+so the Rust port is ~1.5× faster **single-threaded** — before any SIMD or multi-core (the
+per-spectrum work is embarrassingly parallel). Caching the per-segment partition lookup (instead of
+re-running it per nominal mass) was a +160% throughput win. The generating function — the real
+high-res hot path — is where the larger gains will come.
+
 ## Notes
 
 - Our code is MIT. The reference MS-GF+ models/data are UC-licensed and are **not** vendored

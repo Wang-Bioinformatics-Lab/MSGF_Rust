@@ -12,3 +12,8 @@ msgf-chem = { path = "../msgf-chem" }
 [dev-dependencies]
 serde_json = { workspace = true }
 msgf-io = { path = "../msgf-io" }
+criterion = { workspace = true }
+
+[[bench]]
+name = "scoring"
+harness = false
