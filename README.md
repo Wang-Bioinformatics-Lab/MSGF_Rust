@@ -397,10 +397,17 @@ MSGF_Rust/
 │   └── crates/
 │       ├── msgf-chem/     # masses, residues, fragment ions, tolerance, mass scaling
 │       ├── msgf-io/       # Spectrum types + MGF reader
-│       ├── msgf-scorer/   # .param loader + preprocessing + scored spectrum (RawScore)
+│       ├── msgf-scorer/   # .param loader/writer + preprocessing + RawScore
+│       │   └── models/    # the bundled MIT/CC0-clean default scoring model
 │       ├── msgf-genfunc/  # de novo graph + generating-function DP → SpecEValue  ← hot core
-│       └── msgf-cli/      # the `msgf` binary (rescore)
-├── validation/            # cross-language oracle: golden JSON + regression (data un-vendored)
+│       ├── msgf-train/    # trainer: annotated spectra → a .param we own
+│       ├── msgf-db/       # FASTA, digestion, decoys
+│       ├── msgf-fdr/      # target-decoy q-values
+│       ├── msgf-search/   # the database search engine
+│       ├── msgf/          # umbrella library crate (facade over the msgf-* crates)
+│       └── msgf-cli/      # the `msgf` binary (search / rescore / decoy / fdr)
+├── LICENSING.md           # what ships vs. what is fetched; the clean-room boundary
+├── validation/            # cross-language oracle: goldens generated locally (see LICENSING.md)
 └── .github/workflows/     # release.yml — builds + publishes msgf binaries on tag
 ```
 
