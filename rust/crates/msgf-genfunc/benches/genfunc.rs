@@ -9,7 +9,7 @@ use std::time::Duration;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use msgf_chem::{mass, scaling};
 use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa};
-use msgf_genfunc::{compute, merge_group, Cleavage};
+use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch};
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
 use rayon::prelude::*;
@@ -80,14 +80,21 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
 
 /// Full per-spectrum SpecEValue: preprocess + scored spectrum + generating function over the
 /// `-ti 0,1` isotope mass group (matching the MS-GF+ search: one graph per candidate mass, merged).
-fn spec_evalue(model: &msgf_scorer::ScoringModel, s: &Prepared, aa: &[Aa], cleave: Cleavage) {
+fn spec_evalue(
+    model: &msgf_scorer::ScoringModel,
+    s: &Prepared,
+    aa: &[Aa],
+    cleave: Cleavage,
+    scratch: &mut DpScratch,
+) {
     let peaks = preprocess(model, s.charge, s.parent_mass, &s.raw);
     let scored = ScoredSpectrum::from_ranked_peaks(model, s.charge, s.parent_mass, peaks);
+    let tables = scored.tables(s.pep_nominal);
     let gfs: Vec<_> = (s.pep_nominal - 1..=s.pep_nominal)
         .filter(|&p| p > 0)
         .filter_map(|p| {
-            let (nodes, sinks) = build_reverse_graph(&scored, p, &[p], aa, 2, -11);
-            compute(&nodes, &sinks, Some(cleave))
+            let (g, sinks) = build_reverse_graph(&scored, &tables, p, &[p], aa, 2, -11);
+            compute_into(scratch, &g, &sinks, Some(cleave))
         })
         .collect();
     black_box(merge_group(&gfs).map(|g| g.spectral_probability(30)));
@@ -109,7 +116,8 @@ fn benches(c: &mut Criterion) {
     };
 
     c.bench_function("specevalue_one_spectrum", |b| {
-        b.iter(|| spec_evalue(&model, &spectra[mid], &aa, cleave))
+        let mut scratch = DpScratch::default();
+        b.iter(|| spec_evalue(&model, &spectra[mid], &aa, cleave, &mut scratch))
     });
 
     let mut g = c.benchmark_group("throughput");
@@ -117,9 +125,10 @@ fn benches(c: &mut Criterion) {
     g.sample_size(10);
     g.measurement_time(Duration::from_secs(15));
     g.bench_function("specevalue_all_spectra", |b| {
+        let mut scratch = DpScratch::default();
         b.iter(|| {
             for s in &spectra {
-                spec_evalue(&model, s, &aa, cleave);
+                spec_evalue(&model, s, &aa, cleave, &mut scratch);
             }
         })
     });
@@ -132,9 +141,9 @@ fn benches(c: &mut Criterion) {
     gp.measurement_time(Duration::from_secs(15));
     gp.bench_function("specevalue_all_spectra_rayon", |b| {
         b.iter(|| {
-            spectra
-                .par_iter()
-                .for_each(|s| spec_evalue(&model, s, &aa, cleave));
+            spectra.par_iter().for_each_init(DpScratch::default, |scratch, s| {
+                spec_evalue(&model, s, &aa, cleave, scratch)
+            });
         })
     });
     gp.finish();

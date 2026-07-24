@@ -134,11 +134,13 @@ fn generating_function_matches_golden() {
             penalty: -11,
             prob_cleavage_sites: prob_cleavage,
         };
-        // GeneratingFunctionGroup: one graph per candidate peptide mass (its own complement), merged
+        // GeneratingFunctionGroup: one graph per candidate peptide mass (its own complement), merged.
+        // Per-node tables are candidate-independent, so build them once for the largest candidate.
+        let tables = scored.tables(sinks.iter().copied().max().unwrap_or(0));
         let gfs: Vec<_> = sinks
             .iter()
             .filter_map(|&p| {
-                let (nodes, sink_idx) = build_reverse_graph(&scored, p, &[p], &aa, 2, -11);
+                let (nodes, sink_idx) = build_reverse_graph(&scored, &tables, p, &[p], &aa, 2, -11);
                 compute(&nodes, &sink_idx, Some(cleave))
             })
             .collect();

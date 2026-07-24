@@ -8,11 +8,96 @@
 //! shifted, probability-weighted convolution (mirroring `GeneratingFunction` + `ScoreDist` in
 //! MS-GF+). The p-value is the upper tail of the final distribution at the observed RawScore.
 //!
-//! This module holds the graph-agnostic core (ScoreDist + the DP). The graph builder that turns a
-//! `ScoredSpectrum` into nodes/edges (reverse graph, sink tolerance, cleavage credits) is layered
-//! on top and validated against MS-GF+'s own DeNovoScore / SpecEValue.
+//! The graph is stored in flat CSR form (`Graph`) and the DP runs over a single reusable arena
+//! (`DpScratch`) so a whole spectrum's work does no per-node allocation. The convolution
+//! arithmetic (`axpy`) is unchanged from the direct MS-GF+ port and reproduces its numbers
+//! bit-for-bit; only the data layout is optimized.
 
 pub mod graph;
+
+/// The shift-add convolution kernel shared by every distribution update: for each source score
+/// `t`, `dst[t + score_diff] += src[t] * aa_prob`. This is the single source of truth for the
+/// DP's floating-point arithmetic — keep it byte-identical to preserve MS-GF+ reproduction. Each
+/// call writes a distinct `dst` index per `t`, so it vectorizes without changing results.
+/// The convolution kernel `d[i] += s[i] * c` over equal-length slices. Selected at runtime so the
+/// default `--release` build gets vectorized codegen without a `target-cpu` flag. **Every kernel
+/// must produce bit-identical results** (packed mul then packed add — no FMA contraction — matches
+/// the scalar rounding per element), so which one runs never changes the SpecEValue.
+type AxpyKernel = unsafe fn(&mut [f64], &[f64], f64);
+
+/// Portable fallback: a plain accumulate loop (LLVM may still auto-vectorize to SSE2).
+unsafe fn axpy_scalar(d: &mut [f64], s: &[f64], c: f64) {
+    for (di, si) in d.iter_mut().zip(s) {
+        *di += *si * c;
+    }
+}
+
+/// AVX kernel: 4 lanes of f64 per iteration (`vmulpd` + `vaddpd`, no `vfmadd`). Caller must ensure
+/// the CPU has AVX (guaranteed by [`select_axpy`]).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn axpy_avx(d: &mut [f64], s: &[f64], c: f64) {
+    use std::arch::x86_64::*;
+    let n = d.len().min(s.len());
+    let cc = _mm256_set1_pd(c);
+    let dp = d.as_mut_ptr();
+    let sp = s.as_ptr();
+    let mut k = 0usize;
+    while k + 4 <= n {
+        let sv = _mm256_loadu_pd(sp.add(k));
+        let dv = _mm256_loadu_pd(dp.add(k));
+        _mm256_storeu_pd(dp.add(k), _mm256_add_pd(dv, _mm256_mul_pd(sv, cc)));
+        k += 4;
+    }
+    while k < n {
+        *dp.add(k) += *sp.add(k) * c;
+        k += 1;
+    }
+}
+
+/// Pick the fastest available convolution kernel once (cheap; `is_x86_feature_detected!` caches).
+#[inline]
+fn select_axpy() -> AxpyKernel {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx") {
+            return axpy_avx;
+        }
+    }
+    axpy_scalar
+}
+
+/// Windowing shared by the DP and the sink/cleavage merges: `dst[t + score_diff] += src[t] * aa_prob`
+/// over the overlapping score range. `kernel` is the (bit-identical) accumulate primitive.
+#[inline(always)]
+fn axpy_with(
+    kernel: AxpyKernel,
+    dst: &mut [f64],
+    dst_min: i32,
+    src: &[f64],
+    src_min: i32,
+    score_diff: i32,
+    aa_prob: f64,
+) {
+    let lo = src_min.max(dst_min - score_diff);
+    let hi = src_min + src.len() as i32;
+    if lo >= hi {
+        return;
+    }
+    let src_lo = (lo - src_min) as usize;
+    let dst_lo = (lo + score_diff - dst_min) as usize;
+    let len = (hi - lo) as usize;
+    let s = &src[src_lo..src_lo + len];
+    let d = &mut dst[dst_lo..dst_lo + len];
+    // Safety: `d.len() == s.len() == len`; the kernel only touches those in-bounds lanes.
+    unsafe { kernel(d, s, aa_prob) }
+}
+
+/// Scalar windowing convolution for cold paths (sink merge, cleavage, `ScoreDist::add_prob_dist`).
+#[inline(always)]
+fn axpy(dst: &mut [f64], dst_min: i32, src: &[f64], src_min: i32, score_diff: i32, aa_prob: f64) {
+    axpy_with(axpy_scalar, dst, dst_min, src, src_min, score_diff, aa_prob);
+}
 
 /// A score distribution: `probs[i]` is the probability of score `min_score + i`. Mirrors
 /// `edu.ucsd.msjava.msgf.ScoreDist`.
@@ -46,15 +131,17 @@ impl ScoreDist {
         self.min_score + self.probs.len() as i32
     }
 
+    /// Add a raw distribution slice (spanning `[src_min, src_min + src.len())`), shifted by
+    /// `score_diff` and scaled by `aa_prob`, into this distribution.
+    #[inline]
+    fn add_slice(&mut self, src_min: i32, src: &[f64], score_diff: i32, aa_prob: f64) {
+        axpy(&mut self.probs, self.min_score, src, src_min, score_diff, aa_prob);
+    }
+
     /// Add `other`, shifted by `score_diff` and scaled by `aa_prob`, into this distribution.
     /// Mirrors `ScoreDist.addProbDist`.
     pub fn add_prob_dist(&mut self, other: &ScoreDist, score_diff: i32, aa_prob: f64) {
-        let lo = other.min_score.max(self.min_score - score_diff);
-        for t in lo..other.max_score() {
-            let src = (t - other.min_score) as usize;
-            let dst = (t + score_diff - self.min_score) as usize;
-            self.probs[dst] += other.probs[src] * aa_prob;
-        }
+        self.add_slice(other.min_score, &other.probs, score_diff, aa_prob);
     }
 
     /// Spectral probability = `P(score >= threshold)`, the upper tail. Mirrors
@@ -70,21 +157,61 @@ impl ScoreDist {
     }
 }
 
-/// One incoming edge to a node: `prev` (predecessor index), its edge score, and the amino-acid
-/// probability weighting it.
-#[derive(Debug, Clone)]
-pub struct Edge {
-    pub prev: usize,
-    pub edge_score: i32,
-    pub aa_prob: f64,
+/// The de novo graph in flat CSR form: node scores plus a single edge list addressed by per-node
+/// offsets. Node 0 is the source; nodes are in topological (increasing nominal mass) order. The
+/// incoming edges of node `i` are the parallel slices `edge_prev/edge_score/edge_prob` over
+/// `edge_start[i]..edge_start[i + 1]`, in amino-acid insertion order — the order the DP sums them,
+/// preserved for bit-exact reproduction of MS-GF+. Replaces the old `Vec<Node>`/per-node
+/// `Vec<Edge>` (which reallocated on every `push`) with five buffers allocated once per graph.
+#[derive(Debug, Clone, Default)]
+pub struct Graph {
+    pub node_score: Vec<i32>,
+    pub edge_start: Vec<u32>,
+    pub edge_prev: Vec<u32>,
+    pub edge_score: Vec<i32>,
+    pub edge_prob: Vec<f64>,
 }
 
-/// A graph node with its node score and incoming edges. Nodes must be in topological (increasing
-/// nominal mass) order; node 0 is the source.
-#[derive(Debug, Clone, Default)]
-pub struct Node {
-    pub node_score: i32,
-    pub edges: Vec<Edge>,
+/// One node for [`Graph::from_adj`]: its node score and incoming `(prev, edge_score, aa_prob)` edges.
+pub type AdjNode = (i32, Vec<(usize, i32, f64)>);
+
+impl Graph {
+    /// Number of nodes (including the source).
+    #[inline]
+    pub fn n_nodes(&self) -> usize {
+        self.node_score.len()
+    }
+
+    /// Number of edges.
+    #[inline]
+    pub fn n_edges(&self) -> usize {
+        self.edge_prev.len()
+    }
+
+    /// Convenience builder from an adjacency list — `nodes[i] = (node_score, incoming edges)` where
+    /// each edge is `(prev, edge_score, aa_prob)`. Utility/test helper; the hot-path builder is
+    /// [`graph::build_reverse_graph`].
+    pub fn from_adj(nodes: &[AdjNode]) -> Self {
+        let n = nodes.len();
+        let mut g = Graph {
+            node_score: Vec::with_capacity(n),
+            edge_start: Vec::with_capacity(n + 1),
+            edge_prev: Vec::new(),
+            edge_score: Vec::new(),
+            edge_prob: Vec::new(),
+        };
+        g.edge_start.push(0);
+        for (ns, edges) in nodes {
+            g.node_score.push(*ns);
+            for &(prev, es, prob) in edges {
+                g.edge_prev.push(prev as u32);
+                g.edge_score.push(es);
+                g.edge_prob.push(prob);
+            }
+            g.edge_start.push(g.edge_prev.len() as u32);
+        }
+        g
+    }
 }
 
 /// Neighboring-amino-acid cleavage weighting applied to the final distribution.
@@ -111,6 +238,46 @@ impl GenFunc {
     }
 }
 
+/// One intermediate node distribution, addressed as a slice `[start, start + len)` of the
+/// [`DpScratch`] arena, spanning scores `[min_score, min_score + len)`. `len == 0` means the node
+/// was never reached.
+#[derive(Clone, Copy)]
+struct NodeDist {
+    min_score: i32,
+    start: u32,
+    len: u32,
+}
+
+impl NodeDist {
+    const ABSENT: NodeDist = NodeDist {
+        min_score: 0,
+        start: 0,
+        len: 0,
+    };
+}
+
+/// Reusable scratch for the DP: an arena backing every intermediate node distribution, so a whole
+/// spectrum's generating function does **no per-node allocation**. Create once and reuse across
+/// candidate masses and spectra (one instance per thread); [`compute`] allocates a throwaway one.
+#[derive(Default)]
+pub struct DpScratch {
+    arena: Vec<f64>,
+    dists: Vec<NodeDist>,
+}
+
+impl DpScratch {
+    /// Total score-distribution cells written for the last `compute_into` — i.e. the sum of all
+    /// reachable nodes' support widths (the DP's convolution work). Profiling aid.
+    pub fn arena_len(&self) -> usize {
+        self.arena.len()
+    }
+
+    /// Number of reachable nodes in the last `compute_into`. Profiling aid.
+    pub fn reachable(&self) -> usize {
+        self.dists.iter().filter(|d| d.len > 0).count()
+    }
+}
+
 /// Merge a `GeneratingFunctionGroup`: sum the per-graph distributions (one graph per candidate
 /// peptide mass in the isotope/precursor-tolerance range). Mirrors
 /// `GeneratingFunctionGroup.computeGeneratingFunction`.
@@ -127,54 +294,119 @@ pub fn merge_group(gfs: &[GenFunc]) -> Option<GenFunc> {
     Some(GenFunc { dist: merged })
 }
 
-/// Compute the generating function over `nodes` (topological order, node 0 = source), summing the
-/// distributions of `sinks` and applying the neighboring-AA `cleavage` weighting. Mirrors
+/// Compute the generating function over `graph` (topological order, node 0 = source), summing the
+/// distributions of `sinks` and applying the neighboring-AA `cleavage` weighting. Allocates a
+/// throwaway [`DpScratch`]; use [`compute_into`] with a reused scratch on hot paths. Mirrors
 /// `GeneratingFunction.computeGeneratingFunction`. Returns `None` if the sinks are unreachable.
-pub fn compute(nodes: &[Node], sinks: &[usize], cleavage: Option<Cleavage>) -> Option<GenFunc> {
-    let mut fwd: Vec<Option<ScoreDist>> = vec![None; nodes.len()];
-    fwd[0] = Some(ScoreDist::point(0, 1.0));
+pub fn compute(graph: &Graph, sinks: &[usize], cleavage: Option<Cleavage>) -> Option<GenFunc> {
+    let mut sc = DpScratch::default();
+    compute_into(&mut sc, graph, sinks, cleavage)
+}
 
-    for i in 1..nodes.len() {
-        let node_score = nodes[i].node_score;
+/// Like [`compute`] but reuses `sc` for all intermediate distributions — no per-node allocation.
+pub fn compute_into(
+    sc: &mut DpScratch,
+    graph: &Graph,
+    sinks: &[usize],
+    cleavage: Option<Cleavage>,
+) -> Option<GenFunc> {
+    let n = graph.n_nodes();
+    if n == 0 {
+        return None;
+    }
+    let kernel = select_axpy(); // chosen once; the per-edge convolution below dominates the DP
+    sc.arena.clear();
+    sc.dists.clear();
+    sc.dists.resize(n, NodeDist::ABSENT);
+
+    // Source: point mass (prob 1) at score 0.
+    sc.arena.push(1.0);
+    sc.dists[0] = NodeDist {
+        min_score: 0,
+        start: 0,
+        len: 1,
+    };
+
+    for i in 1..n {
+        let node_score = graph.node_score[i];
+        let (e0, e1) = (
+            graph.edge_start[i] as usize,
+            graph.edge_start[i + 1] as usize,
+        );
+
+        // Score range of this node's distribution, from its reachable predecessors.
         let (mut cur_min, mut cur_max) = (i32::MAX, i32::MIN);
-        for e in &nodes[i].edges {
-            if let Some(prev) = &fwd[e.prev] {
-                let combined = node_score + e.edge_score;
-                cur_max = cur_max.max(prev.max_score() + combined);
-                cur_min = cur_min.min(prev.min_score + combined);
+        for e in e0..e1 {
+            let pd = sc.dists[graph.edge_prev[e] as usize];
+            if pd.len == 0 {
+                continue;
             }
+            let combined = node_score + graph.edge_score[e];
+            cur_min = cur_min.min(pd.min_score + combined);
+            cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
         }
         if cur_min >= cur_max {
             continue; // unreachable
         }
-        let mut cur = ScoreDist::new(cur_min, cur_max);
-        for e in &nodes[i].edges {
-            if let Some(prev) = &fwd[e.prev] {
-                cur.add_prob_dist(prev, node_score + e.edge_score, e.aa_prob);
+
+        let len = (cur_max - cur_min) as usize;
+        let start = sc.arena.len();
+        sc.arena.resize(start + len, 0.0);
+
+        // Predecessors live earlier in the arena (append order), so split at the new node's start:
+        // `prev_part` is every earlier distribution (immutable), `cur` is this node (mutable).
+        {
+            let (prev_part, cur_part) = sc.arena.split_at_mut(start);
+            let cur = &mut cur_part[..len];
+            for e in e0..e1 {
+                let pd = sc.dists[graph.edge_prev[e] as usize];
+                if pd.len == 0 {
+                    continue;
+                }
+                let src = &prev_part[pd.start as usize..pd.start as usize + pd.len as usize];
+                let score_diff = node_score + graph.edge_score[e];
+                axpy_with(
+                    kernel,
+                    cur,
+                    cur_min,
+                    src,
+                    pd.min_score,
+                    score_diff,
+                    graph.edge_prob[e],
+                );
             }
         }
-        fwd[i] = Some(cur);
+        sc.dists[i] = NodeDist {
+            min_score: cur_min,
+            start: start as u32,
+            len: len as u32,
+        };
     }
 
-    // merge sink distributions
+    // Merge the sink distributions.
     let (mut min, mut max) = (i32::MAX, i32::MIN);
     for &s in sinks {
-        if let Some(d) = &fwd[s] {
-            min = min.min(d.min_score);
-            max = max.max(d.max_score());
+        let d = sc.dists[s];
+        if d.len == 0 {
+            continue;
         }
+        min = min.min(d.min_score);
+        max = max.max(d.min_score + d.len as i32);
     }
     if max <= min {
         return None;
     }
     let mut merged = ScoreDist::new(min, max);
     for &s in sinks {
-        if let Some(d) = &fwd[s] {
-            merged.add_prob_dist(d, 0, 1.0);
+        let d = sc.dists[s];
+        if d.len == 0 {
+            continue;
         }
+        let src = &sc.arena[d.start as usize..d.start as usize + d.len as usize];
+        merged.add_slice(d.min_score, src, 0, 1.0);
     }
 
-    // neighboring amino-acid cleavage credit/penalty (probabilistic)
+    // Neighboring amino-acid cleavage credit/penalty (probabilistic).
     let dist = match cleavage {
         Some(w) => {
             let mut f = ScoreDist::new(merged.min_score + w.penalty, merged.max_score() + w.credit);
@@ -208,26 +440,12 @@ mod tests {
     #[test]
     fn tiny_generating_function() {
         // source(0) --aa(0.5), edgeScore 1--> node1(nodeScore 2) --aa(0.5), edgeScore 3--> sink2(nodeScore 0)
-        let nodes = vec![
-            Node::default(), // source
-            Node {
-                node_score: 2,
-                edges: vec![Edge {
-                    prev: 0,
-                    edge_score: 1,
-                    aa_prob: 0.5,
-                }],
-            },
-            Node {
-                node_score: 0,
-                edges: vec![Edge {
-                    prev: 1,
-                    edge_score: 3,
-                    aa_prob: 0.5,
-                }],
-            },
-        ];
-        let gf = compute(&nodes, &[2], None).unwrap();
+        let g = Graph::from_adj(&[
+            (0, vec![]),            // source
+            (2, vec![(0, 1, 0.5)]), // node1
+            (0, vec![(1, 3, 0.5)]), // sink2
+        ]);
+        let gf = compute(&g, &[2], None).unwrap();
         // path score = (2+1) + (0+3) = 6 with prob 0.5*0.5 = 0.25
         approx(gf.spectral_probability(6), 0.25);
         approx(gf.spectral_probability(7), 0.0);
@@ -236,20 +454,10 @@ mod tests {
 
     #[test]
     fn neighboring_cleavage_splits_mass() {
-        let nodes = vec![
-            Node::default(),
-            Node {
-                node_score: 0,
-                edges: vec![Edge {
-                    prev: 0,
-                    edge_score: 0,
-                    aa_prob: 1.0,
-                }],
-            },
-        ];
         // merged: score 0 prob 1. cleavage credit +2 (p=0.25), penalty -1 (p=0.75)
+        let g = Graph::from_adj(&[(0, vec![]), (0, vec![(0, 0, 1.0)])]);
         let gf = compute(
-            &nodes,
+            &g,
             &[1],
             Some(Cleavage {
                 credit: 2,

@@ -6,9 +6,9 @@
 //! enzymes, sink tolerance, and source/neighboring cleavage credits — is layered on next and
 //! validated against MS-GF+'s own DeNovoScore / SpecEValue oracle.
 
-use crate::{Edge, Node};
+use crate::Graph;
 use msgf_chem::{residue_mass, scaling};
-use msgf_scorer::scored_spectrum::ScoredSpectrum;
+use msgf_scorer::scored_spectrum::{ScoredSpectrum, SpectrumTables};
 
 /// Uniform amino-acid background probability in MS-GF+ (`AminoAcid.probability = 0.05`).
 pub const AA_PROB: f64 = 0.05;
@@ -57,45 +57,87 @@ pub fn standard_aa() -> Vec<Aa> {
 /// source and sinks are 0. Each edge `prev = m − aa` carries the validated `ScoredSpectrum::edge_score`
 /// weighted by the amino acid's probability; the source edge (C-terminal residue) also gets the
 /// peptide cleavage credit/penalty for K/R.
+///
+/// `tables` holds the per-node quantities (main-ion mass, prefix/suffix node scores) precomputed
+/// once per spectrum via [`ScoredSpectrum::tables`] — none depend on `complement_mass`, so the
+/// isotope-error candidate graphs reuse one instance instead of redoing the peak lookups. It must
+/// cover `0..=max(sinks, complement_mass)`.
 pub fn build_reverse_graph(
     scored: &ScoredSpectrum,
+    tables: &SpectrumTables,
     complement_mass: i32,
     sinks: &[i32],
     aa: &[Aa],
     peptide_credit: i32,
     peptide_penalty: i32,
-) -> (Vec<Node>, Vec<usize>) {
+) -> (Graph, Vec<usize>) {
     let graph_max = sinks
         .iter()
         .copied()
         .max()
         .unwrap_or(complement_mass)
         .max(complement_mass);
-    let mut nodes: Vec<Node> = vec![Node::default(); graph_max as usize + 1];
-    let sink_set: std::collections::HashSet<i32> = sinks.iter().copied().collect();
-    let max_n = graph_max + 1;
+    let n = graph_max as usize + 1;
+    // `sinks` is tiny (the isotope range), so a linear check beats allocating a HashSet.
+    let is_sink = |m: i32| sinks.contains(&m);
 
+    let mut node_score = vec![0i32; n];
     for m in 1..graph_max {
-        if sink_set.contains(&m) || m >= complement_mass {
+        if is_sink(m) || m >= complement_mass {
             continue; // sinks and out-of-range nodes score 0
         }
-        nodes[m as usize].node_score = msgf_chem::round_half_up(
-            scored.node_score(complement_mass - m, true) + scored.node_score(m, false),
+        node_score[m as usize] = msgf_chem::round_half_up(
+            tables.prefix[(complement_mass - m) as usize] + tables.suffix[m as usize],
         );
     }
+
+    // CSR edges, built in two passes with no per-node allocation. Pass 1: count incoming edges per
+    // node (one per amino acid whose predecessor mass is >= 0) and prefix-sum into `edge_start`.
+    let mut edge_start = vec![0u32; n + 1];
     for m in 1..=graph_max {
-        // Edges INTO the sink carry errorScore 0 (setBackwardEdgesFromSink), not getEdgeScore —
-        // and no peptide cleavage; only intermediate edges call edge_score.
-        let is_sink = sink_set.contains(&m);
+        let mut c = 0u32;
+        for a in aa {
+            if m - a.nominal >= 0 {
+                c += 1;
+            }
+        }
+        edge_start[m as usize] = c; // stash the per-node count, converted to offsets below
+    }
+    let mut acc = 0u32;
+    for slot in edge_start.iter_mut() {
+        let c = *slot;
+        *slot = acc;
+        acc += c;
+    }
+    let total = acc as usize;
+
+    // Pass 2: fill edges in amino-acid order (the DP's summation order — preserved for bit-exact
+    // reproduction). Edges INTO a sink carry errorScore 0 (setBackwardEdgesFromSink), not
+    // getEdgeScore, and no peptide cleavage; only intermediate edges call edge_score.
+    //
+    // Node masses come from the shared `tables` (one peak lookup per node per spectrum, not one per
+    // incident edge per graph). `m, prev` are always in `0..max_n`, so the `edge_score` bounds guard
+    // never fires; `edge_score_with` on the resolved masses is equivalent.
+    let node_mass = &tables.node_mass;
+    let mut edge_prev = vec![0u32; total];
+    let mut edge_score = vec![0i32; total];
+    let mut edge_prob = vec![0f64; total];
+    for m in 1..=graph_max {
+        let sink_m = is_sink(m);
+        let mut pos = edge_start[m as usize] as usize;
         for a in aa {
             let prev = m - a.nominal;
             if prev < 0 {
                 continue;
             }
-            let es = if is_sink {
+            let es = if sink_m {
                 0
             } else {
-                let mut e = scored.edge_score(m, prev, a.accurate_mass, max_n);
+                let mut e = scored.edge_score_with(
+                    node_mass[m as usize],
+                    node_mass[prev as usize],
+                    a.accurate_mass,
+                );
                 if prev == 0 {
                     e += if a.residue == b'K' || a.residue == b'R' {
                         peptide_credit
@@ -105,14 +147,21 @@ pub fn build_reverse_graph(
                 }
                 e
             };
-            nodes[m as usize].edges.push(Edge {
-                prev: prev as usize,
-                edge_score: es,
-                aa_prob: a.prob,
-            });
+            edge_prev[pos] = prev as u32;
+            edge_score[pos] = es;
+            edge_prob[pos] = a.prob;
+            pos += 1;
         }
     }
-    (nodes, sinks.iter().map(|&s| s as usize).collect())
+
+    let graph = Graph {
+        node_score,
+        edge_start,
+        edge_prev,
+        edge_score,
+        edge_prob,
+    };
+    (graph, sinks.iter().map(|&s| s as usize).collect())
 }
 
 #[cfg(test)]

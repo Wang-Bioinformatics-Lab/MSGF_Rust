@@ -79,12 +79,26 @@ pub struct ScoredSpectrum<'a> {
     /// Partition index serving each segment. Constant per spectrum, so it is precomputed once
     /// rather than re-running the partition `floor` lookup for every nominal mass scored.
     seg_partition: Vec<Option<usize>>,
-    /// Partition used for edge scoring (`getPartition` at the last segment).
-    edge_partition: Option<usize>,
     /// The dominant ion type (`mainIon`) for this precursor — used for `getNodeMass`.
     main_ion: Option<FragOff>,
-    /// `probPeak` for the ion-existence edge score.
-    prob_peak: f32,
+    /// `getIonExistenceScore` precomputed for the 4 (cur/prev-present) indices — a per-spectrum
+    /// constant, so its `ln` is evaluated once here rather than on every edge. `None` when there
+    /// is no edge partition (edge scoring would not be valid, matching the old `.expect`).
+    ion_existence_cache: Option<[f32; 4]>,
+    /// `getErrorScore` precomputed for every quantized error bin `ei in 0..2·esf+1`.
+    error_score_cache: Vec<f32>,
+}
+
+/// Per-node quantities shared across a spectrum's candidate graphs (see
+/// [`ScoredSpectrum::tables`]). Each vector is indexed by nominal mass `0..=max_nominal`.
+#[derive(Debug, Clone)]
+pub struct SpectrumTables {
+    /// `getNodeMass(k)` — the main ion's matched-peak mass, or `-1` when absent.
+    pub node_mass: Vec<f32>,
+    /// `getNodeScore(k, isPrefix = true)`.
+    pub prefix: Vec<f32>,
+    /// `getNodeScore(k, isPrefix = false)`.
+    pub suffix: Vec<f32>,
 }
 
 impl<'a> ScoredSpectrum<'a> {
@@ -105,14 +119,46 @@ impl<'a> ScoredSpectrum<'a> {
         let peptide_mass = parent_mass - mass::WATER as f32;
         let approx_bins = (peptide_mass / (model.mme.value as f32 * 2.0)).max(1.0);
         let prob_peak = (peaks.len().max(1) as f32) / approx_bins;
+
+        // Precompute the two edge-score lookups. Both depend only on the (per-spectrum) edge
+        // partition and probPeak, so the `ln` in each is evaluated once here — not per edge. The
+        // expressions mirror `ion_existence_score` / `error_score` exactly, keeping values bit-equal.
+        let (ion_existence_cache, error_score_cache) = match edge_partition {
+            Some(part) if part < model.error_dist.len() => {
+                let ed = &model.error_dist[part];
+                let mut ie4 = [0.0f32; 4];
+                for (index, slot) in ie4.iter_mut().enumerate() {
+                    let noise = match index {
+                        0 => (1.0 - prob_peak) * (1.0 - prob_peak),
+                        3 => prob_peak * prob_peak,
+                        _ => prob_peak * (1.0 - prob_peak),
+                    };
+                    let ip = if ed.ion_existence[index] == 0.0 {
+                        0.01
+                    } else {
+                        ed.ion_existence[index]
+                    };
+                    *slot = (ip as f64 / noise as f64).ln() as f32;
+                }
+                let est: Vec<f32> = ed
+                    .signal
+                    .iter()
+                    .zip(&ed.noise)
+                    .map(|(&s, &n)| (s as f64 / n as f64).ln() as f32)
+                    .collect();
+                (Some(ie4), est)
+            }
+            _ => (None, Vec::new()),
+        };
+
         Self {
             model,
             parent_mass,
             peaks,
             seg_partition,
-            edge_partition,
             main_ion,
-            prob_peak,
+            ion_existence_cache,
+            error_score_cache,
         }
     }
 
@@ -222,6 +268,36 @@ impl<'a> ScoredSpectrum<'a> {
         self.main_ion.as_ref().map(|i| i.is_prefix).unwrap_or(false)
     }
 
+    /// `getNodeMass` for every nominal mass `0..=max_nominal`, precomputed once. Edge scoring
+    /// resolves each node's main-ion mass with a single peak lookup here instead of one per
+    /// incident edge (~19 amino acids). Depends only on the spectrum — not on the candidate
+    /// peptide mass — so the table is identical across the isotope-error candidate graphs.
+    pub fn node_masses(&self, max_nominal: i32) -> Vec<f32> {
+        (0..=max_nominal.max(0)).map(|k| self.node_mass(k)).collect()
+    }
+
+    /// Precompute every per-node quantity the graph builder needs, for all nominal masses
+    /// `0..=max_nominal`: the main-ion mass and the prefix/suffix node scores. **None of these
+    /// depend on the candidate peptide mass**, so a spectrum's isotope-error candidate graphs (e.g.
+    /// `-ti 0,1`) share one instance instead of recomputing the peak lookups per graph. Build this
+    /// once per spectrum with `max_nominal` = the largest candidate mass, then pass it to
+    /// `build_reverse_graph`.
+    pub fn tables(&self, max_nominal: i32) -> SpectrumTables {
+        let m = max_nominal.max(0);
+        let node_mass = self.node_masses(m);
+        let mut prefix = vec![0.0f32; (m + 1) as usize];
+        let mut suffix = vec![0.0f32; (m + 1) as usize];
+        for k in 1..=m {
+            prefix[k as usize] = self.node_score(k, true);
+            suffix[k as usize] = self.node_score(k, false);
+        }
+        SpectrumTables {
+            node_mass,
+            prefix,
+            suffix,
+        }
+    }
+
     /// `getNodeMass`: the main ion's matched-peak mass for a node, or -1 when absent.
     fn node_mass(&self, nominal: i32) -> f32 {
         if nominal == 0 {
@@ -237,26 +313,18 @@ impl<'a> ScoredSpectrum<'a> {
         }
     }
 
-    /// `getIonExistenceScore(partition, index, probPeak)`.
+    /// `getIonExistenceScore(partition, index, probPeak)` — a per-spectrum table lookup (built in
+    /// `from_ranked_peaks`).
     fn ion_existence_score(&self, index: usize) -> f32 {
-        let part = self.edge_partition.expect("edge partition present");
-        let ie = self.model.error_dist[part].ion_existence;
-        let noise = match index {
-            0 => (1.0 - self.prob_peak) * (1.0 - self.prob_peak),
-            3 => self.prob_peak * self.prob_peak,
-            _ => self.prob_peak * (1.0 - self.prob_peak),
-        };
-        let ip = if ie[index] == 0.0 { 0.01 } else { ie[index] };
-        (ip as f64 / noise as f64).ln() as f32
+        self.ion_existence_cache.expect("edge partition present")[index]
     }
 
-    /// `getErrorScore(partition, error)`.
+    /// `getErrorScore(partition, error)` — quantize the mass error to its bin, then read the
+    /// per-spectrum table (built in `from_ranked_peaks`).
     fn error_score(&self, error: f32) -> f32 {
-        let part = self.edge_partition.expect("edge partition present");
         let esf = self.model.error_scaling_factor;
         let ei = msgf_chem::round_half_up(error * esf as f32).clamp(-esf, esf) + esf;
-        let ed = &self.model.error_dist[part];
-        (ed.signal[ei as usize] as f64 / ed.noise[ei as usize] as f64).ln() as f32
+        self.error_score_cache[ei as usize]
     }
 
     /// `DBScanScorer.getEdgeScoreInt` for one edge (between two nominal node masses).
@@ -264,8 +332,13 @@ impl<'a> ScoredSpectrum<'a> {
         if cur >= max_nominal || prev >= max_nominal || cur < 0 || prev < 0 {
             return 0;
         }
-        let cur_mass = self.node_mass(cur);
-        let prev_mass = self.node_mass(prev);
+        self.edge_score_with(self.node_mass(cur), self.node_mass(prev), theo_mass)
+    }
+
+    /// `getEdgeScoreInt` given the two nodes' already-resolved main-ion masses (from
+    /// [`node_masses`](Self::node_masses)). Splitting the mass resolution out lets the graph builder
+    /// look each node mass up once instead of once per incident edge; the arithmetic is identical.
+    pub fn edge_score_with(&self, cur_mass: f32, prev_mass: f32, theo_mass: f32) -> i32 {
         let mut index = 0usize;
         if cur_mass >= 0.0 {
             index += 1;
