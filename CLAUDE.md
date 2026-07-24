@@ -10,8 +10,19 @@ reference Java MS-GF+ (`github.com/MSGFPlus/msgfplus`). The Java implementation 
 **oracle**: every crate is checked against frozen "golden" outputs derived from it. A
 Sage-inspired database search engine (`msgf-search`) is a later phase and does not exist yet.
 
-`PLAN.md` is the authoritative design doc (phases, decisions, algorithm derivation). Read it before
-substantial work. `PERFORMANCE.md` has the current Rust-vs-Java timings.
+Two workstreams are live: **fidelity/performance** of the scoring path, and **model ownership** —
+removing the last UC-licensed dependency (the trained `.param` model) so the project can ship MIT.
+
+Doc map — read the relevant one before substantial work:
+
+| Doc | What it is |
+|---|---|
+| `PLAN.md` | authoritative design doc: phases, decisions (D1–D5), algorithm derivation |
+| `PLAN1.md` | the model-ownership execution plan (own the `.param` → train our own), with status |
+| `docs/models.md` | the two trained/implicit models, what taints what, plan to retrain (decision D5) |
+| `docs/param-format.md` | normative byte-level `.param` spec — the reference for any encoder/trainer |
+| `PERFORMANCE.md` | current Rust-vs-Java timings and how the DP got fast |
+| `validation/README.md` | golden corpus layout, provenance, license |
 
 ## Commands
 
@@ -27,6 +38,15 @@ cargo clippy --workspace --all-targets
 cargo fmt --all
 cargo bench -p msgf-genfunc --bench genfunc   # SpecEValue DP, 1-core + 32-core (rayon)
 cargo bench -p msgf-scorer  --bench scoring   # scored-spectrum sub-components
+```
+
+The `msgf` binary (crate `msgf-cli`) — `rescore` is the only subcommand; it recomputes
+RawScore/DeNovoScore/SpecEValue for a supplied PSM list (it is *not* a database search):
+
+```bash
+cargo run -p msgf-cli --release -- rescore \
+  --spectra spectra.mgf --param HCD_HighRes_Tryp.param --psms psms.tsv [--ti 0,1] [--aa-probs f.tsv]
+cargo run -p msgf-cli -- --help          # full flag list lives in main.rs USAGE
 ```
 
 Reference data + regression (from `validation/`):
@@ -48,21 +68,33 @@ Consequently:
 - **Golden integration tests skip gracefully when `validation/data/` is absent** — they locate the
   repo root via `env!("CARGO_MANIFEST_DIR")` joined with `../../..`, check for the model/data files,
   and `return` early with an `eprintln!("skip: ...")` if missing. A fresh clone therefore passes
-  `cargo test` even with no data. **When adding a golden test, follow this skip pattern** or CI on a
-  clean checkout will fail.
+  `cargo test` even with no data. **When adding a golden test, follow this skip pattern** or
+  `cargo test` on a clean checkout will fail. (There is no test CI workflow — `.github/workflows/`
+  holds only `release.yml`, which builds the `msgf` binaries on a `v*` tag. Run the suite locally.)
 - Never `git add` anything under `validation/data/`, and never vendor `.param` models or the
   MS-GF+ jar. Only *derived numeric facts* (the `validation/golden/*.json`) are committed.
 
+## The clean-room boundary (constrains how you write code)
+
+Fidelity work reads MS-GF+'s Java freely — reproducing its arithmetic *is* the job for the scorer
+and the DP. The **model-authoring path is different**: `write_param` (`msgf-scorer/src/write.rs`)
+and any future trainer are deliberately **clean-room**, written from `docs/param-format.md` and this
+repo's `read_param`, *not* transcribed from MS-GF+'s `NewRankScorer.writeParameters`. The defense is
+that a file format is an interface; what is licensed is UC's trained numbers. Preserve that line —
+if you extend the writer or start the trainer, work from the spec doc, and update
+`docs/param-format.md` first if the spec is wrong. The `author_a_model_from_scratch` test enforces
+the boundary by building and scoring a model with zero fetched bytes; keep it passing.
+
 ## Architecture
 
-The scoring pipeline is a linear dependency chain of four crates (a spectrum + candidate peptide →
-SpecEValue). Each crate is validated independently against its own golden family before the next
-builds on it.
+The scoring pipeline is a linear dependency chain (a spectrum + candidate peptide → SpecEValue).
+Each crate is validated independently against its own golden family before the next builds on it.
 
 ```
-msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc
-(MGF read)   (.param model +    (de novo graph + score-distribution DP → SpecEValue)  ← hot core
-              scored spectrum)
+msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc  ──►  msgf-cli
+(MGF read)   (.param model +    (de novo graph + score-      (the `msgf` binary:
+              scored spectrum)   distribution DP → SpecEValue)  rescore)
+                                        ↑ hot core
    msgf-chem  (masses, residues, fragment ions, tolerance, mass-grid scaling) — used by all
 ```
 
@@ -73,22 +105,30 @@ msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc
 - **`msgf-io`** — `Spectrum`/`Peak` types and a streaming `MgfReader`. Validated by byte-for-byte
   peak-list hashes. (mzML via the `mzdata` crate is planned, not present.)
 - **`msgf-scorer`** — `read_param()` decodes the binary `.param` scoring model (`ScoringModel`,
-  `Partition`, `FragOff`, `RankDist`, …); `preprocess()` does precursor filtering + deconvolution +
-  intensity ranking; `ScoredSpectrum` produces per-node prefix/suffix scores and the full
-  per-peptide **RawScore**. This is where MS-GF+'s preprocessing must be mirrored exactly.
+  `Partition`, `FragOff`, `RankDist`, …) and `write_param()` (`write.rs`) re-encodes it, round-trip
+  byte-exact on all four high-res UC models; `preprocess()` does precursor filtering +
+  deconvolution + intensity ranking; `ScoredSpectrum` produces per-node prefix/suffix scores and the
+  full per-peptide **RawScore**. This is where MS-GF+'s preprocessing must be mirrored exactly.
 - **`msgf-genfunc`** — the load-bearing core. `graph::build_reverse_graph` builds the de novo graph
-  (nodes = scaled prefix masses, edges = amino acids weighted by background frequency); `compute()`
-  runs the score-distribution DP producing a `GenFunc` with a `ScoreDist`; `merge_group()` combines
-  the per-isotope-error graphs (the `-ti 0,1` mass group). DeNovoScore is the max-score path;
-  SpecEValue is the upper-tail probability of the RawScore distribution.
+  (nodes = scaled prefix masses, edges = amino acids weighted by background frequency) in a flat
+  **CSR** layout; `compute()` / `compute_into()` run the score-distribution DP producing a `GenFunc`
+  with a `ScoreDist`; `merge_group()` combines the per-isotope-error graphs (the `-ti 0,1` mass
+  group). DeNovoScore is the max-score path; SpecEValue is the upper-tail probability of the
+  RawScore distribution. On hot paths use `compute_into` with a reused `DpScratch` (one per thread)
+  — the arena makes the whole spectrum allocation-free.
+- **`msgf-cli`** — the `msgf` binary. `rescore` caches one generating function per `(scan, charge)`
+  and turns each PSM into a RawScore + tail lookup; `tests/golden_rescore.rs` checks the binary
+  end-to-end against MS-GF+ on F13.
 
 ### Why the generating function is the whole point
 
 The DP `ScoreDist[m] = Σ_aa shift(ScoreDist[m − massBin(aa)], by s(m)) · freq(aa)` **depends only on
 the spectrum + precursor mass, not on any candidate peptide** — so it is built **once per spectrum**
 and every PSM becomes a cheap tail lookup. The high-res mass grid is ~274× finer than nominal
-(~1.1M nodes vs ~4k), making this inner loop the dominant cost and the main optimization target
-(flat `Vec` ScoreDist, sliding window, SIMD, rayon across spectra). See `PLAN.md` §4.
+(~1.1M nodes vs ~4k), so this inner loop dominates runtime and is the main optimization target. See
+`PLAN.md` §4 for the derivation and `PERFORMANCE.md` for what has already been done (CSR graph +
+arena, hoisted per-spectrum score tables, O(1) peak bucket index, shared node tables across the two
+isotope-error graphs, AVX convolution kernel) — check there before "optimizing" something twice.
 
 ## Fidelity is the contract
 
@@ -98,6 +138,12 @@ within `|log10(rust/java)| ≤ 0.05`. When changing scoring, preprocessing, or t
 "golden tests still green," and reproducing Java's exact arithmetic (rounding mode, summation order,
 `.param` decode) matters more than idiomatic Rust. If you must diverge from the Java algorithm,
 that is a deliberate, reviewed change — flag it, don't silently "improve" it.
+
+This binds optimizations too: every perf change so far is bit-exact, and the vectorized DP kernel
+must stay byte-identical to the scalar one. That is why `axpy_avx` does a packed multiply then a
+packed add and **never** an FMA — contraction would change the result. Anything that reassociates
+float summation, contracts operations, or reorders accumulation is a fidelity change, not a free
+speedup.
 
 Golden generators live in `validation/reference/` (Python for no-Java fixtures; `*.java` dumpers +
 `generate_golden.sh` for JVM-derived ones). Regenerating goldens is a deliberate action, never a
