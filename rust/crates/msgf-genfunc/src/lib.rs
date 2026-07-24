@@ -111,6 +111,22 @@ impl GenFunc {
     }
 }
 
+/// Merge a `GeneratingFunctionGroup`: sum the per-graph distributions (one graph per candidate
+/// peptide mass in the isotope/precursor-tolerance range). Mirrors
+/// `GeneratingFunctionGroup.computeGeneratingFunction`.
+pub fn merge_group(gfs: &[GenFunc]) -> Option<GenFunc> {
+    let min = gfs.iter().map(|g| g.dist.min_score).min()?;
+    let max = gfs.iter().map(|g| g.dist.max_score()).max()?;
+    if max <= min {
+        return None;
+    }
+    let mut merged = ScoreDist::new(min, max);
+    for g in gfs {
+        merged.add_prob_dist(&g.dist, 0, 1.0);
+    }
+    Some(GenFunc { dist: merged })
+}
+
 /// Compute the generating function over `nodes` (topological order, node 0 = source), summing the
 /// distributions of `sinks` and applying the neighboring-AA `cleavage` weighting. Mirrors
 /// `GeneratingFunction.computeGeneratingFunction`. Returns `None` if the sinks are unreachable.

@@ -5,7 +5,7 @@
 //! and spectral probability. Skipped if goldens/model/data are absent.
 
 use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa};
-use msgf_genfunc::{compute, Cleavage};
+use msgf_genfunc::{compute, merge_group, Cleavage};
 use msgf_io::MgfReader;
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -126,15 +126,23 @@ fn generating_function_matches_golden() {
         let g_spec = e["spec_prob"].as_f64().unwrap();
         total += 1;
 
+        let _ = complement; // isotope range is handled per-mass below
         let peaks = preprocess(&model, charge, parent_mass, raw_peaks);
         let scored = ScoredSpectrum::from_ranked_peaks(&model, charge, parent_mass, peaks);
-        let (nodes, sink_idx) = build_reverse_graph(&scored, complement, &sinks, &aa, 2, -11);
         let cleave = Cleavage {
             credit: 2,
             penalty: -11,
             prob_cleavage_sites: prob_cleavage,
         };
-        let Some(gf) = compute(&nodes, &sink_idx, Some(cleave)) else {
+        // GeneratingFunctionGroup: one graph per candidate peptide mass (its own complement), merged
+        let gfs: Vec<_> = sinks
+            .iter()
+            .filter_map(|&p| {
+                let (nodes, sink_idx) = build_reverse_graph(&scored, p, &[p], &aa, 2, -11);
+                compute(&nodes, &sink_idx, Some(cleave))
+            })
+            .collect();
+        let Some(gf) = merge_group(&gfs) else {
             continue;
         };
 
