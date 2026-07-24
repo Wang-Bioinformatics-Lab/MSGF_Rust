@@ -16,7 +16,7 @@ cargo fmt --all
 | `msgf-chem` | ✅ implemented | `validation/golden/chemistry/` — atomic/residue/peptide masses, b/y ions, tolerance, mass scaling |
 | `msgf-io` | ✅ MGF reader | `validation/golden/spectra/` — byte-for-byte peak-list hashes over F13 (1,406) + test.mgf (5,760) |
 | `msgf-scorer` | ✅ full RawScore (node + edge) | `.param` decoded; node scores match on 95,306 values; preprocessing (incl. deconvolution) exact; **full per-peptide RawScore (node + edge, `DBScanScorer`) matches MS-GF+ 30/30 across charge 2/3 + mods**. Generating function (SpecEValue) next |
-| `msgf-genfunc` | ⬜ next | DeNovoScore + SpecEValue from `iprg2013_F13.golden.json` (the generating-function core) |
+| `msgf-genfunc` | ✅ **SpecEValue p-value (bit-exact)** | Generating-function DP (ScoreDist + GeneratingFunctionGroup) over the de novo graph. **DeNovoScore + SpecEValue match MS-GF+ 30/30; score distributions agree to ~2e-8** (`golden_specprob.rs`) |
 | `msgf-cli` | ⬜ later | end-to-end differential test vs the F13 golden |
 | `msgf-search` | ⬜ later | Sage-inspired search engine |
 
