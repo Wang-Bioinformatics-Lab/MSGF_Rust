@@ -1,7 +1,8 @@
 //! `PLAN2.md` TD-2 Gate 1: reproduce MS-GF+'s `QValue` and `PepQValue` columns exactly.
 //!
-//! The oracle is `validation/golden/iprg2013_F13.golden.json`, which is **committed** — so unlike
-//! most golden tests here this one needs no fetched data and runs on a fresh clone.
+//! The oracle is `validation/golden/iprg2013_F13.golden.json`. Being MS-GF+-derived it is **not
+//! committed** — regenerate it with `validation/reference/generate_golden.sh` (jar + spectra +
+//! FASTA); this test skips until you do.
 //!
 //! The golden holds MS-GF+'s `-unroll 1` output: 4133 rows, one per *protein occurrence*. FDR
 //! counts *matches*, so the rows are first rolled back up into 1610 unique PSMs keyed by

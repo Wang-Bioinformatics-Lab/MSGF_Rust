@@ -12,7 +12,11 @@
 # Output: golden/fdr/fdrmap_cases.golden.json
 #
 # JVM-only; needs reference/MSGFPlus.jar (fetch_reference_data.sh --jar) and nothing else -- no
-# spectra, no models, no database. The output is committed, so the Rust test needs no fetched data.
+# spectra, no models, no database, which makes it the cheapest golden here to regenerate.
+#
+# The output is derived from MS-GF+, so it is NOT committed (see golden/.gitignore,
+# golden/README.md and ../../LICENSING.md); its sha256 is recorded in golden/UC_DERIVED.sha256,
+# and msgf-fdr's tests/golden_fdrmap.rs skips when the file is absent.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAR="$HERE/MSGFPlus.jar"

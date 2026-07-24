@@ -23,12 +23,14 @@
 //! Two populations are analysed: every reported match (`QValue`) and one entry per distinct
 //! peptide, keyed by its best score (`PepQValue`).
 //!
-//! **Validated** two ways, neither needing fetched data:
+//! **Validated** two ways. Both goldens are MS-GF+-derived, so they are generated locally rather
+//! than committed (`validation/golden/README.md`), and each test skips when its golden is absent:
 //!
 //! - `tests/golden_fdr.rs` (TD-2 Gate 1) — both columns reproduce MS-GF+ exactly for all 1610
-//!   unique PSMs of `validation/golden/iprg2013_F13.golden.json`.
+//!   unique PSMs of `validation/golden/iprg2013_F13.golden.json` (`reference/generate_golden.sh`).
 //! - `tests/golden_fdrmap.rs` (TD-2 Gate 2) — 14 synthetic cases dumped straight out of
-//!   `TargetDecoyAnalysis` by `validation/reference/java/DumpFdrMap.java`, comparing every map
+//!   `TargetDecoyAnalysis` by `validation/reference/java/DumpFdrMap.java`
+//!   (`reference/make_fdr_golden.sh`), comparing every map
 //!   entry and every lookup (including each threshold's immediate float neighbours). This is the
 //!   gate that pins the three rules F13 cannot see, because it yields only two distinct q-values
 //!   (`PLAN2.md` §4): the tie rule in step 2, the `target_index == 0` skip, and the step-4 lookup.

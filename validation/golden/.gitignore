@@ -7,7 +7,8 @@ models/*.model.golden.json
 models/node_scores.golden.json
 rawscore/
 spectra/
+fdr/
 
-# NOTE: golden families still under active development (fdr/, search/) are deliberately NOT listed
-# here — silently ignoring another workstream's files would hide them at commit time. If those
-# goldens are derived from MS-GF+ output, add them here when that work lands.
+# NOTE: a golden family still under active development (search/) is deliberately NOT listed here —
+# silently ignoring another workstream's files would hide them at commit time. If those goldens are
+# derived from MS-GF+ output, add them here when that work lands.
