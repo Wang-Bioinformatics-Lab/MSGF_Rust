@@ -22,7 +22,8 @@
 //! ```no_run
 //! use msgf::{chem, genfunc, io, scorer};
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let model = scorer::read_param_file("HCD_HighRes_Tryp.param")?;
+//! // The bundled MassIVE-KB-trained model; `scorer::read_param_file(path)` loads another.
+//! let model = scorer::bundled::model()?;
 //! let spectra = io::read_mgf_file("run.mgf")?;
 //! let spectrum = &spectra[0];
 //!
@@ -54,7 +55,7 @@
 //! |---|---|---|
 //! | [`chem`] | `msgf-chem` | masses, residues, peptides, fragment ions, tolerance, mass-grid scaling |
 //! | [`io`] | `msgf-io` | `Spectrum`/`Peak` and the MGF reader |
-//! | [`scorer`] | `msgf-scorer` | `.param` model read/write, preprocessing, `ScoredSpectrum` → RawScore |
+//! | [`scorer`] | `msgf-scorer` | `.param` model read/write, the bundled default model (`scorer::bundled`), preprocessing, `ScoredSpectrum` → RawScore |
 //! | [`genfunc`] | `msgf-genfunc` | de novo graph + score-distribution DP → DeNovoScore / SpecEValue |
 //! | [`db`] | `msgf-db` | FASTA, target-decoy construction, digestion |
 //! | [`fdr`] | `msgf-fdr` | MS-GF+-compatible PSM- and peptide-level q-values |
@@ -84,7 +85,7 @@ pub mod prelude {
     pub use crate::chem::{peptide::Residue, residue_mass, Tolerance, Unit};
     pub use crate::genfunc::{compute, compute_into, DpScratch, GenFunc, ScoreDist};
     pub use crate::io::{MgfReader, Peak, Spectrum};
-    pub use crate::scorer::{scored_spectrum::ScoredSpectrum, ScoringModel};
+    pub use crate::scorer::{bundled, scored_spectrum::ScoredSpectrum, ScoringModel};
 
     #[cfg(feature = "search")]
     pub use crate::db::{enzyme::DigestParams, fasta::ProteinDb, Enzyme};
