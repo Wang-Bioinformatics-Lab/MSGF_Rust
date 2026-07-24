@@ -36,7 +36,7 @@ fn generating_function_matches_golden() {
             .push(p);
     }
 
-    let (mut denovo_ok, mut specE_close, mut total) = (0, 0, 0);
+    let (mut denovo_ok, mut spec_ok, mut total) = (0, 0, 0);
     for s in ss["spectra"].as_array().unwrap() {
         let scan = s["scan"].as_i64().unwrap();
         let peptide = s["golden_peptide"].as_str().unwrap();
@@ -54,7 +54,7 @@ fn generating_function_matches_golden() {
         };
         let g_raw = psm["raw_score"].as_i64().unwrap() as i32;
         let g_denovo = psm["denovo_score"].as_i64().unwrap() as i32;
-        let g_specE = psm["spec_evalue"].as_f64().unwrap();
+        let g_spec_e = psm["spec_evalue"].as_f64().unwrap();
         total += 1;
 
         let peaks: Vec<RankedPeak> = s["peaks"]
@@ -79,9 +79,9 @@ fn generating_function_matches_golden() {
             continue;
         };
         let my_denovo = gf.max_score();
-        let my_specE = gf.spectral_probability(g_raw);
-        let ratio = if g_specE > 0.0 && my_specE > 0.0 {
-            (my_specE / g_specE).log10()
+        let my_spec_e = gf.spectral_probability(g_raw);
+        let ratio = if g_spec_e > 0.0 && my_spec_e > 0.0 {
+            (my_spec_e / g_spec_e).log10()
         } else {
             f64::NAN
         };
@@ -90,13 +90,13 @@ fn generating_function_matches_golden() {
             denovo_ok += 1;
         }
         if ratio.abs() <= 0.5 {
-            specE_close += 1;
+            spec_ok += 1;
         }
         if total <= 16 {
-            eprintln!("  scan {scan} c{charge} raw {g_raw}: DeNovo mine {my_denovo} vs {g_denovo}  |  SpecE mine {my_specE:.3e} vs {g_specE:.3e} (Δlog10 {ratio:.2})");
+            eprintln!("  scan {scan} c{charge} raw {g_raw}: DeNovo mine {my_denovo} vs {g_denovo}  |  SpecE mine {my_spec_e:.3e} vs {g_spec_e:.3e} (Δlog10 {ratio:.2})");
         }
     }
-    eprintln!("DeNovoScore exact: {denovo_ok}/{total}; SpecEValue within 0.5 log10: {specE_close}/{total}");
+    eprintln!("DeNovoScore exact: {denovo_ok}/{total}; SpecEValue within 0.5 log10: {spec_ok}/{total}");
     // WIP: the GF is implemented and close (DeNovo within ~30, SpecE within ~4 log10) but not yet
     // exact — remaining subtleties (de-novo amino-acid set, isotope-error sink nodes, exact
     // cleavage) are being pinned against MS-GF+'s own score distribution. These loose bounds are a
