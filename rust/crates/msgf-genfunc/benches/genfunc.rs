@@ -15,7 +15,9 @@ use msgf_scorer::scored_spectrum::ScoredSpectrum;
 use rayon::prelude::*;
 
 fn repo(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").join(rel)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(rel)
 }
 
 struct Prepared {
@@ -41,24 +43,38 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
             let mz = s.precursor_mz? as f32;
             let parent_mass = mz * charge as f32 - charge as f32 * mass::PROTON as f32;
             let pep_nominal = scaling::nominal_bin(parent_mass - mass::WATER as f32);
-            if pep_nominal < 200 || pep_nominal > 6000 {
+            if !(200..=6000).contains(&pep_nominal) {
                 return None;
             }
             Some(Prepared {
                 charge,
                 parent_mass,
                 pep_nominal,
-                raw: s.peaks.iter().map(|p| (p.mz as f32, p.intensity as f32)).collect(),
+                raw: s
+                    .peaks
+                    .iter()
+                    .map(|p| (p.mz as f32, p.intensity as f32))
+                    .collect(),
             })
         })
         .collect();
     // 21-aa de-novo set (20 standard + M-oxidation), uniform prob (timing is prob-independent)
     let mut aa: Vec<Aa> = standard_aa_nominal()
         .into_iter()
-        .map(|(r, n)| Aa { residue: r, nominal: n, accurate_mass: msgf_chem::residue_mass(r).unwrap() as f32, prob: 0.05 })
+        .map(|(r, n)| Aa {
+            residue: r,
+            nominal: n,
+            accurate_mass: msgf_chem::residue_mass(r).unwrap() as f32,
+            prob: 0.05,
+        })
         .collect();
     let m_ox = msgf_chem::residue_mass(b'M').unwrap() as f32 + 15.994915;
-    aa.push(Aa { residue: b'M', nominal: scaling::nominal_bin(m_ox), accurate_mass: m_ox, prob: 0.05 });
+    aa.push(Aa {
+        residue: b'M',
+        nominal: scaling::nominal_bin(m_ox),
+        accurate_mass: m_ox,
+        prob: 0.05,
+    });
     Some((model, spectra, aa))
 }
 
@@ -78,8 +94,14 @@ fn spec_evalue(model: &msgf_scorer::ScoringModel, s: &Prepared, aa: &[Aa], cleav
 }
 
 fn benches(c: &mut Criterion) {
-    let Some((model, spectra, aa)) = load() else { return };
-    let cleave = Cleavage { credit: 2, penalty: -11, prob_cleavage_sites: 0.10 };
+    let Some((model, spectra, aa)) = load() else {
+        return;
+    };
+    let cleave = Cleavage {
+        credit: 2,
+        penalty: -11,
+        prob_cleavage_sites: 0.10,
+    };
     let mid = {
         let mut idx: Vec<usize> = (0..spectra.len()).collect();
         idx.sort_by_key(|&i| spectra[i].pep_nominal);
@@ -110,12 +132,18 @@ fn benches(c: &mut Criterion) {
     gp.measurement_time(Duration::from_secs(15));
     gp.bench_function("specevalue_all_spectra_rayon", |b| {
         b.iter(|| {
-            spectra.par_iter().for_each(|s| spec_evalue(&model, s, &aa, cleave));
+            spectra
+                .par_iter()
+                .for_each(|s| spec_evalue(&model, s, &aa, cleave));
         })
     });
     gp.finish();
 
-    eprintln!("(benched {} F13 spectra; {} rayon threads)", spectra.len(), rayon::current_num_threads());
+    eprintln!(
+        "(benched {} F13 spectra; {} rayon threads)",
+        spectra.len(),
+        rayon::current_num_threads()
+    );
 }
 
 criterion_group!(benial, benches);
