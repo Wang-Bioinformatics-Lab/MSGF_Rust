@@ -5,6 +5,10 @@ members = [
     "crates/msgf-io",
     "crates/msgf-scorer",
     "crates/msgf-genfunc",
+    "crates/msgf-db",
+    "crates/msgf-fdr",
+    "crates/msgf-search",
+    "crates/msgf",
     "crates/msgf-cli",
 ]
 

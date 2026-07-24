@@ -15,10 +15,52 @@ cargo fmt --all
 |---|---|---|
 | `msgf-chem` | ✅ implemented | `validation/golden/chemistry/` — atomic/residue/peptide masses, b/y ions, tolerance, mass scaling |
 | `msgf-io` | ✅ MGF reader | `validation/golden/spectra/` — byte-for-byte peak-list hashes over F13 (1,406) + test.mgf (5,760) |
-| `msgf-scorer` | ✅ full RawScore (node + edge) | `.param` decoded; node scores match on 95,306 values; preprocessing (incl. deconvolution) exact; **full per-peptide RawScore (node + edge, `DBScanScorer`) matches MS-GF+ 30/30 across charge 2/3 + mods**. Generating function (SpecEValue) next |
+| `msgf-scorer` | ✅ full RawScore (node + edge) | `.param` decoded; node scores match on 95,306 values; preprocessing (incl. deconvolution) exact; **full per-peptide RawScore (node + edge, `DBScanScorer`) matches MS-GF+ 30/30 across charge 2/3 + mods** |
 | `msgf-genfunc` | ✅ **SpecEValue p-value (bit-exact)** | Generating-function DP (ScoreDist + GeneratingFunctionGroup) over the de novo graph. **DeNovoScore + SpecEValue match MS-GF+ 30/30; score distributions agree to ~2e-8** (`golden_specprob.rs`) |
-| `msgf-cli` | ✅ `msgf rescore` (RawScore/DeNovoScore/SpecEValue) | `tests/golden_rescore.rs` — the `msgf` binary reproduces MS-GF+ **30/30** on F13 (RawScore + DeNovoScore exact, SpecEValue to f64 noise) |
-| `msgf-search` | ⬜ later | Sage-inspired search engine |
+| `msgf-db` | ✅ FASTA, decoys, digestion | **Target-decoy FASTA byte-identical to MS-GF+'s `.revCat.fasta`** for both references (`golden_decoy_fasta.rs`, PLAN2 TD-1) |
+| `msgf-fdr` | ✅ PSM + peptide q-values | **`QValue`/`PepQValue` reproduce MS-GF+ exactly for all 1,610 F13 PSMs** (`golden_fdr.rs`, PLAN2 TD-2 Gate 1 — committed golden, runs data-free) |
+| `msgf-search` | ✅ database search | End-to-end vs MS-GF+ on F13 (`golden_search.rs`): **0 scans where our best candidate scores lower**; on the 1,161 scans with the same top peptide, **RawScore and DeNovoScore exact 1,161/1,161** and SpecEValue within tolerance |
+| `msgf` | ✅ umbrella facade | One dependency re-exporting the whole pipeline (`msgf::{chem, io, scorer, genfunc, db, fdr, search}`); `default-features = false` drops the search engine |
+| `msgf-cli` | ✅ `search` / `rescore` / `decoy` / `fdr` | `msgf-cli/tests/golden_rescore.rs` — the binary reproduces MS-GF+ **30/30** on F13 |
+
+## Using it as a library
+
+```toml
+[dependencies]
+msgf = { git = "https://github.com/mwang87/MSGF_Rust" }
+# scoring only, without the search engine and its rayon dependency:
+msgf = { git = "https://github.com/mwang87/MSGF_Rust", default-features = false }
+```
+
+```rust
+use msgf::prelude::*;
+let model = msgf::scorer::read_param_file("HCD_HighRes_Tryp.param")?;
+let db = msgf::db::fasta::ProteinDb::read("human.revCat.fasta", "XXX_")?;
+let index = msgf::search::PeptideIndex::build(&db, &DigestParams::default(), &Default::default());
+```
+
+The individual `msgf-*` crates can also be depended on directly; the facade adds no wrappers.
+
+## Command line
+
+```bash
+msgf search  -s run.mgf -p HCD_HighRes_Tryp.param -d human.revCat.fasta -o psms.tsv
+msgf rescore -s run.mgf -p HCD_HighRes_Tryp.param -i psms.tsv
+msgf decoy   -d human.fasta -o human.revCat.fasta
+msgf fdr     -i psms.tsv -o psms.q.tsv
+```
+
+`msgf <command> --help` lists every flag. Two defaults worth knowing: **missed cleavages are
+unlimited** (MS-GF+'s own default — pass `-c 2` for a conventional, far smaller index), and
+q-values need decoys (`--tda`, or search a concatenated `*.revCat.fasta`).
+
+### Heavy tests
+
+The F13-vs-MS-GF+ search comparison builds a ~48M-candidate index (~2 GB) and is `#[ignore]`d:
+
+```bash
+cargo test -p msgf-search --release -- --ignored --nocapture
+```
 
 ## Benchmarks
 

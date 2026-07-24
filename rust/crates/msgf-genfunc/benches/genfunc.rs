@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use msgf_chem::{mass, scaling};
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa};
+use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
 use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch};
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -91,7 +91,14 @@ fn spec_evalue(
     let scored = ScoredSpectrum::from_ranked_peaks(model, s.charge, s.parent_mass, peaks);
     let tables = scored.tables(s.pep_nominal);
     // Build tables + edges once for the largest candidate; each candidate only recomputes node scores.
-    let (mut g, _) = build_reverse_graph(&scored, &tables, s.pep_nominal, &[s.pep_nominal], aa, 2, -11);
+    let (mut g, _) = build_reverse_graph(
+        &scored,
+        &tables,
+        s.pep_nominal,
+        &[s.pep_nominal],
+        aa,
+        PeptideCleavage::TRYPSIN,
+    );
     let mut gfs = Vec::new();
     for p in (s.pep_nominal - 1..=s.pep_nominal).filter(|&p| p > 0) {
         g.recompute_node_scores(&tables, p, &[p]);
@@ -143,9 +150,11 @@ fn benches(c: &mut Criterion) {
     gp.measurement_time(Duration::from_secs(15));
     gp.bench_function("specevalue_all_spectra_rayon", |b| {
         b.iter(|| {
-            spectra.par_iter().for_each_init(DpScratch::default, |scratch, s| {
-                spec_evalue(&model, s, &aa, cleave, scratch)
-            });
+            spectra
+                .par_iter()
+                .for_each_init(DpScratch::default, |scratch, s| {
+                    spec_evalue(&model, s, &aa, cleave, scratch)
+                });
         })
     });
     gp.finish();

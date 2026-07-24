@@ -1,14 +1,10 @@
 [package]
-name = "msgf-cli"
+name = "msgf-search"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Command-line front-end for MSGF_Rust: database search, PSM rescoring, target-decoy FASTA construction and FDR"
-
-[[bin]]
-name = "msgf"
-path = "src/main.rs"
+description = "Database search engine for MSGF_Rust: modification-aware candidate generation, MS-GF+ RawScore/SpecEValue, target-decoy FDR"
 
 [dependencies]
 msgf-chem = { path = "../msgf-chem" }
@@ -17,7 +13,6 @@ msgf-fdr = { path = "../msgf-fdr" }
 msgf-io = { path = "../msgf-io" }
 msgf-scorer = { path = "../msgf-scorer" }
 msgf-genfunc = { path = "../msgf-genfunc" }
-msgf-search = { path = "../msgf-search" }
 rayon = { workspace = true }
 
 [dev-dependencies]

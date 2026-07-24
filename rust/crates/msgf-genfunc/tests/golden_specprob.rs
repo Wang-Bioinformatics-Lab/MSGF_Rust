@@ -4,7 +4,7 @@
 //! re-preprocess F13 raw peaks (HighRes model) → scored spectrum → reverse graph → DP → DeNovoScore
 //! and spectral probability. Skipped if goldens/model/data are absent.
 
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa};
+use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
 use msgf_genfunc::{compute, merge_group, Cleavage};
 use msgf_io::MgfReader;
 use msgf_scorer::preprocess::preprocess;
@@ -139,7 +139,14 @@ fn generating_function_matches_golden() {
         // and only recompute node scores per candidate — the shared path used in production.
         let max_p = sinks.iter().copied().max().unwrap_or(0);
         let tables = scored.tables(max_p);
-        let (mut graph, _) = build_reverse_graph(&scored, &tables, max_p, &[max_p], &aa, 2, -11);
+        let (mut graph, _) = build_reverse_graph(
+            &scored,
+            &tables,
+            max_p,
+            &[max_p],
+            &aa,
+            PeptideCleavage::TRYPSIN,
+        );
         let mut gfs = Vec::new();
         for &p in &sinks {
             graph.recompute_node_scores(&tables, p, &[p]);

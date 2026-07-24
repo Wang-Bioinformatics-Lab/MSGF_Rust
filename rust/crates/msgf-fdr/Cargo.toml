@@ -1,0 +1,12 @@
+[package]
+name = "msgf-fdr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Target-decoy FDR for MSGF_Rust: MS-GF+-compatible PSM- and peptide-level q-values"
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { workspace = true }

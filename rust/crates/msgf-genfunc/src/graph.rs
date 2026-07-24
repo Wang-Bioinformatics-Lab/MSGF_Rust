@@ -49,6 +49,45 @@ pub fn standard_aa() -> Vec<Aa> {
         .collect()
 }
 
+/// Cleavage scoring for the peptide's own C-terminus, applied to the graph's source edge.
+///
+/// `cleave_at` are the enzyme's cleavage residues — [`PeptideCleavage::TRYPSIN`] (`KR`, +2/-11) is
+/// the configuration validated bit-exact against MS-GF+. A residue in the set earns `credit`, any
+/// other earns `penalty`; use [`PeptideCleavage::NONE`] to switch cleavage scoring off entirely,
+/// which is what an unspecific enzyme needs.
+#[derive(Debug, Clone, Copy)]
+pub struct PeptideCleavage<'a> {
+    pub cleave_at: &'a [u8],
+    pub credit: i32,
+    pub penalty: i32,
+}
+
+impl PeptideCleavage<'_> {
+    /// Trypsin: cleaves after K/R, +2 credit and -11 penalty. The validated default.
+    pub const TRYPSIN: PeptideCleavage<'static> = PeptideCleavage {
+        cleave_at: b"KR",
+        credit: 2,
+        penalty: -11,
+    };
+
+    /// No cleavage scoring — every source edge scores 0.
+    pub const NONE: PeptideCleavage<'static> = PeptideCleavage {
+        cleave_at: &[],
+        credit: 0,
+        penalty: 0,
+    };
+
+    /// The credit or penalty this residue earns at the peptide's C-terminus.
+    #[inline]
+    pub fn score(&self, residue: u8) -> i32 {
+        if self.cleave_at.contains(&residue) {
+            self.credit
+        } else {
+            self.penalty
+        }
+    }
+}
+
 /// Build the **reverse** de novo graph (C-terminal enzyme, e.g. trypsin): nodes indexed by suffix
 /// nominal mass, node 0 = source, the masses in `sinks` are sinks (the precursor + isotope-error
 /// mass range). `complement_mass` is the peptide mass used for the node-score complement.
@@ -62,14 +101,15 @@ pub fn standard_aa() -> Vec<Aa> {
 /// once per spectrum via [`ScoredSpectrum::tables`] — none depend on `complement_mass`, so the
 /// isotope-error candidate graphs reuse one instance instead of redoing the peak lookups. It must
 /// cover `0..=max(sinks, complement_mass)`.
+///
+/// `cleavage` scores the source edge — the peptide's C-terminal residue. See [`PeptideCleavage`].
 pub fn build_reverse_graph(
     scored: &ScoredSpectrum,
     tables: &SpectrumTables,
     complement_mass: i32,
     sinks: &[i32],
     aa: &[Aa],
-    peptide_credit: i32,
-    peptide_penalty: i32,
+    cleavage: PeptideCleavage<'_>,
 ) -> (Graph, Vec<usize>) {
     let graph_max = sinks
         .iter()
@@ -132,14 +172,13 @@ pub fn build_reverse_graph(
             if prev < 0 {
                 continue;
             }
-            let mut es =
-                scored.edge_score_with(node_mass[m as usize], node_mass[prev as usize], a.accurate_mass);
+            let mut es = scored.edge_score_with(
+                node_mass[m as usize],
+                node_mass[prev as usize],
+                a.accurate_mass,
+            );
             if prev == 0 {
-                es += if a.residue == b'K' || a.residue == b'R' {
-                    peptide_credit
-                } else {
-                    peptide_penalty
-                };
+                es += cleavage.score(a.residue);
             }
             edge_prev[pos] = prev as u32;
             edge_score[pos] = es;
