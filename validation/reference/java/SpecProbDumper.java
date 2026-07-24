@@ -83,16 +83,24 @@ import java.util.Map;
  *   getSpectralProbability(score>=minScore); we OMIT it so getScoreDist() returns the
  *   FULL distribution for the Rust DP to validate. (SpecEValue is reproduced identically;
  *   verified by the self_check counters below.)
- * NOTE 4 (no doNotUseError): the DEFAULT high-res search keeps edge scoring ON. doNotUseError()
- *   is only called under -turnOffEdgeScoring; it zeroes errorScalingFactor and makes
- *   supportEdgeScores() false (node-only FastScorer). We do NOT call it. The residual gap the
- *   earlier rawscore golden saw (reconstructed full_score != reported MSGFScore) came instead from
- *   sizing the scorer with the peptide's own nominal mass; the real search sizes it with the
- *   PRECURSOR-derived nominal mass (maxNominalPeptideMass), which this driver reproduces.
+ * NOTE 4 (instrument model + no doNotUseError): the earlier scored-spectrum / rawscore goldens used
+ *   the QExactive model (InstrumentType.QEXACTIVE, HCD_QExactive_Tryp.param) and never reproduced the
+ *   reported MSGFScore. ROOT CAUSE: the iprg2013_F13 search ran `-inst 1` = HighRes (Orbitrap), which
+ *   loads HCD_HighRes_Tryp.param -- a DIFFERENT model. With the HighRes model here, MSGFScore and
+ *   DeNovoScore reproduce exactly. (A secondary detail: size the DBScanScorer with the PRECURSOR-derived
+ *   nominal mass, as ScoredSpectraMap does, not the peptide's own.) doNotUseError() is NOT called (edge
+ *   scoring stays ON); it is only invoked under -turnOffEdgeScoring.
  *
- * Args: <model.param> <spectra.mgf> <modfile> <selection.tsv> <msgf.tsv> <out.json>
+ * NOTE 5 (DB-derived aa probabilities): the GF spectral-probability distribution uses per-residue
+ *   probabilities computed from the SEARCHED DATABASE'S composition via
+ *   DBScanner.setAminoAcidProbabilities(databaseFile, aaSet). This is what makes SpecEValue match the
+ *   search; DeNovoScore/MSGFScore are unaffected (integer scores from the spectrum). The iprg2013
+ *   target and revCat DBs have identical composition, so either reproduces the golden SpecEValue.
+ *
+ * Args: <model.param> <spectra.mgf> <modfile> <database.fasta> <selection.tsv> <msgf.tsv> <out.json>
  *   selection.tsv rows: scan<TAB>charge<TAB>context_peptide<TAB>golden_raw_score
  *                       (context_peptide keeps flanking, e.g. K.RSRRRRKR.A)
+ *   database.fasta    : the searched FASTA (iprg2013_human) -- source of the aa-composition priors.
  *   msgf.tsv          : the MS-GF+ search TSV (DeNovoScore / MSGFScore / SpecEValue columns)
  *   model.param       : used only for the MODEL_NAME label; the scorer is built from the
  *                       equivalent bundled NewScorerFactory resource exactly as the search does.
@@ -130,15 +138,16 @@ public class SpecProbDumper {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 6) {
-            System.err.println("usage: SpecProbDumper <model.param> <spectra.mgf> <modfile> <selection.tsv> <msgf.tsv> <out.json>");
+        if (args.length != 7) {
+            System.err.println("usage: SpecProbDumper <model.param> <spectra.mgf> <modfile> <database.fasta> <selection.tsv> <msgf.tsv> <out.json>");
             System.exit(2);
         }
         File mgfFile = new File(args[1]);
         String modFilePath = args[2];
-        File selFile = new File(args[3]);
-        File tsvFile = new File(args[4]);
-        File outFile = new File(args[5]);
+        String dbFilePath = args[3];
+        File selFile = new File(args[4]);
+        File tsvFile = new File(args[5]);
+        File outFile = new File(args[6]);
 
         // 1. Scorer built EXACTLY as the default high-res search (ScoredSpectraMap): resource scorer.
         //    doNotUseError() is ONLY called when -turnOffEdgeScoring is set (it zeroes errorScalingFactor
@@ -150,9 +159,18 @@ public class SpecProbDumper {
             System.err.println("WARNING: scorer does not support edge scores (edge scoring would be OFF)");
         }
 
-        // 2. Amino-acid set from the mod file; register trypsin for cleavage constants.
+        // 2. Amino-acid set from the mod file. Then set the per-residue PROBABILITIES from the
+        //    searched database's amino-acid composition, EXACTLY as MSGFPlus main does
+        //    (DBScanner.setAminoAcidProbabilities(databaseFile, aaSet)). These probabilities are the
+        //    GF edge probabilities used to build the spectral-probability distribution; they are
+        //    DB-derived, so SpecEValue depends on the database composition even though DeNovoScore /
+        //    MSGFScore (integer node/edge scores from the spectrum) do not. Omitting this step makes
+        //    spec_prob wrong (uses the default 0.05/uniform priors) while leaving DeNovoScore/MSGFScore
+        //    correct -- which is exactly the discrepancy observed before this fix. registerEnzyme is
+        //    called AFTER, so probCleavageSites / cleavage credits also reflect the DB composition.
         ParamManager pm = new ParamManager("SpecProbDumper", "1", "2026", "usage");
         AminoAcidSet aaSet = AminoAcidSet.getAminoAcidSetFromModFile(modFilePath, pm);
+        edu.ucsd.msjava.msdbsearch.DBScanner.setAminoAcidProbabilities(dbFilePath, aaSet);
         Enzyme enzyme = Enzyme.TRYPSIN;
         aaSet.registerEnzyme(enzyme);
         int neighborCredit = aaSet.getNeighboringAACleavageCredit();
@@ -360,6 +378,8 @@ public class SpecProbDumper {
             + "isotope(-ti 0,1)+10ppm mass-index range, registered in a GeneratingFunctionGroup; "
             + "denovo_score=gf.getMaxScore()-1; spec_prob=gf.getSpectralProbability(raw_score); "
             + "raw_score=cleavage+DBScanScorer.getScore(prm,nominalPRM,1,len+1,numMods)=DBScanner match score. "
+            + "aaSet per-residue probabilities are set from the searched DB composition via "
+            + "DBScanner.setAminoAcidProbabilities (GF edge probabilities); this is REQUIRED for SpecEValue. "
             + "setUpScoreThreshold is omitted (pruning only) so score_dist_sample is the FULL ScoreDist. "
             + "Generated by SpecProbDumper.java against MSGFPlus.jar; every number is from MS-GF+.")).append(",\n");
         sb.append(" \"gf_construction\": {")
@@ -370,7 +390,8 @@ public class SpecProbDumper {
           .append("\"aa_set\": ").append(jstr("getAminoAcidSetFromModFile(iprg-2013_Mods.txt)")).append(", ")
           .append("\"enzyme\": ").append(jstr("Trypsin")).append(", ")
           .append("\"isotope_error\": [").append(MIN_ISOTOPE_ERROR).append(",").append(MAX_ISOTOPE_ERROR).append("], ")
-          .append("\"precursor_tolerance\": ").append(jstr("10ppm")).append("},\n");
+          .append("\"precursor_tolerance\": ").append(jstr("10ppm")).append(", ")
+          .append("\"aa_probabilities\": ").append(jstr("DBScanner.setAminoAcidProbabilities(" + new File(dbFilePath).getName() + ") -- DB-composition priors")).append("},\n");
         sb.append(" \"cleavage_constants\": {")
           .append("\"neighboring_credit\": ").append(neighborCredit).append(", ")
           .append("\"neighboring_penalty\": ").append(neighborPenalty).append(", ")

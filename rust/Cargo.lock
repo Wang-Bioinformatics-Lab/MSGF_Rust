@@ -322,6 +322,7 @@ name = "msgf-genfunc"
 version = "0.1.0"
 dependencies = [
  "msgf-chem",
+ "msgf-io",
  "msgf-scorer",
  "serde_json",
 ]

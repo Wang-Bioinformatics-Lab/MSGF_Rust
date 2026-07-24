@@ -37,6 +37,10 @@ MGF="$HERE/../data/spectra/F13.mgf"
 MODS="$HERE/../data/config/iprg-2013_Mods.txt"
 SCORED="$HERE/../golden/rawscore/f13_scored_spectrum.golden.json"
 TSV="$HERE/../golden/iprg2013_F13.tsv"
+# Searched database (provenance: db=iprg2013_human.fasta, -tda 1). Its amino-acid COMPOSITION sets the
+# GF edge probabilities (DBScanner.setAminoAcidProbabilities) and is REQUIRED to reproduce SpecEValue.
+# The revCat (target+decoy) DB has identical composition; target fasta is used here (matches provenance).
+DB="$HERE/../data/fasta/iprg2013_human.fasta"
 OUTDIR="$HERE/../golden/rawscore"
 OUT="$OUTDIR/f13_specprob.golden.json"
 
@@ -45,6 +49,7 @@ command -v javac >/dev/null 2>&1 && JVM() { "$@"; } || JVM() { conda run -n msgf
 [[ -f "$JAR" ]]    || { echo "ERROR: $JAR missing (fetch_reference_data.sh --jar)"; exit 1; }
 [[ -f "$SCORED" ]] || { echo "ERROR: $SCORED missing (run make_scored_spectrum_golden.sh first)"; exit 1; }
 [[ -f "$TSV" ]]    || { echo "ERROR: $TSV missing (fetch_reference_data.sh)"; exit 1; }
+[[ -f "$DB" ]]     || { echo "ERROR: $DB missing (fetch_reference_data.sh)"; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -63,6 +68,6 @@ print(f"wrote {len(d['spectra'])} selection rows")
 PY
 
 JVM javac -cp "$JAR" -d "$WORK" "$HERE/java/SpecProbDumper.java"
-JVM java -cp "$WORK:$JAR" SpecProbDumper "$MODEL" "$MGF" "$MODS" "$WORK/selection.tsv" "$TSV" "$OUT"
+JVM java -cp "$WORK:$JAR" SpecProbDumper "$MODEL" "$MGF" "$MODS" "$DB" "$WORK/selection.tsv" "$TSV" "$OUT"
 
 echo "wrote $OUT ($(wc -c < "$OUT") bytes)"

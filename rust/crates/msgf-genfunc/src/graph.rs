@@ -26,38 +26,72 @@ pub fn standard_aa_nominal() -> Vec<(u8, i32)> {
         .collect()
 }
 
+/// An amino acid for graph edges: residue (unmodified, for cleavage checks), its nominal and
+/// accurate residue masses (including any modification), and its (DB-composition) probability.
+#[derive(Debug, Clone, Copy)]
+pub struct Aa {
+    pub residue: u8,
+    pub nominal: i32,
+    pub accurate_mass: f32,
+    pub prob: f64,
+}
+
+/// The 20 standard amino acids with uniform probability (`AA_PROB`), for de novo without a DB.
+pub fn standard_aa() -> Vec<Aa> {
+    standard_aa_nominal()
+        .into_iter()
+        .map(|(residue, nominal)| Aa {
+            residue,
+            nominal,
+            accurate_mass: residue_mass(residue).expect("standard residue") as f32,
+            prob: AA_PROB,
+        })
+        .collect()
+}
+
 /// Build the **reverse** de novo graph (C-terminal enzyme, e.g. trypsin): nodes indexed by suffix
-/// nominal mass `0..=pep_nominal`, node 0 = source, `pep_nominal` = sink.
+/// nominal mass, node 0 = source, the masses in `sinks` are sinks (the precursor + isotope-error
+/// mass range). `complement_mass` is the peptide mass used for the node-score complement.
 ///
-/// Node score at `m` = `round(node_score(pep−m, prefix) + node_score(m, suffix))`; source and sink
-/// are 0 (`computeNodeScores`). Each edge `prev = m − aa` carries the validated
-/// `ScoredSpectrum::edge_score` weighted by [`AA_PROB`]; the first edge (from the source — the
-/// C-terminal residue) also gets the peptide cleavage credit/penalty for K/R.
+/// Node score at intermediate `m` = `round(node_score(complement−m, prefix) + node_score(m, suffix))`;
+/// source and sinks are 0. Each edge `prev = m − aa` carries the validated `ScoredSpectrum::edge_score`
+/// weighted by the amino acid's probability; the source edge (C-terminal residue) also gets the
+/// peptide cleavage credit/penalty for K/R.
 pub fn build_reverse_graph(
     scored: &ScoredSpectrum,
-    pep_nominal: i32,
+    complement_mass: i32,
+    sinks: &[i32],
+    aa: &[Aa],
     peptide_credit: i32,
     peptide_penalty: i32,
 ) -> (Vec<Node>, Vec<usize>) {
-    let n = pep_nominal.max(0) as usize + 1;
-    let mut nodes: Vec<Node> = vec![Node::default(); n];
-    let aa = standard_aa_nominal();
-    let max_n = pep_nominal + 1;
+    let graph_max = sinks
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(complement_mass)
+        .max(complement_mass);
+    let mut nodes: Vec<Node> = vec![Node::default(); graph_max as usize + 1];
+    let sink_set: std::collections::HashSet<i32> = sinks.iter().copied().collect();
+    let max_n = graph_max + 1;
 
-    for m in 1..pep_nominal {
-        nodes[m as usize].node_score =
-            (scored.node_score(pep_nominal - m, true) + scored.node_score(m, false)).round() as i32;
+    for m in 1..graph_max {
+        if sink_set.contains(&m) || m >= complement_mass {
+            continue; // sinks and out-of-range nodes score 0
+        }
+        nodes[m as usize].node_score = (scored.node_score(complement_mass - m, true)
+            + scored.node_score(m, false))
+        .round() as i32;
     }
-    for m in 1..=pep_nominal {
-        for &(residue, aa_nom) in &aa {
-            let prev = m - aa_nom;
+    for m in 1..=graph_max {
+        for a in aa {
+            let prev = m - a.nominal;
             if prev < 0 {
                 continue;
             }
-            let aa_real = residue_mass(residue).expect("standard residue") as f32;
-            let mut es = scored.edge_score(m, prev, aa_real, max_n);
+            let mut es = scored.edge_score(m, prev, a.accurate_mass, max_n);
             if prev == 0 {
-                es += if residue == b'K' || residue == b'R' {
+                es += if a.residue == b'K' || a.residue == b'R' {
                     peptide_credit
                 } else {
                     peptide_penalty
@@ -66,11 +100,11 @@ pub fn build_reverse_graph(
             nodes[m as usize].edges.push(Edge {
                 prev: prev as usize,
                 edge_score: es,
-                aa_prob: AA_PROB,
+                aa_prob: a.prob,
             });
         }
     }
-    (nodes, vec![pep_nominal as usize])
+    (nodes, sinks.iter().map(|&s| s as usize).collect())
 }
 
 #[cfg(test)]

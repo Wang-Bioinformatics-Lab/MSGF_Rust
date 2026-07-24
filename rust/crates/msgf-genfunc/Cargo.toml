@@ -12,3 +12,4 @@ msgf-scorer = { path = "../msgf-scorer" }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+msgf-io = { path = "../msgf-io" }
