@@ -13,3 +13,9 @@ msgf-scorer = { path = "../msgf-scorer" }
 [dev-dependencies]
 serde_json = { workspace = true }
 msgf-io = { path = "../msgf-io" }
+criterion = { workspace = true }
+rayon = { workspace = true }
+
+[[bench]]
+name = "genfunc"
+harness = false

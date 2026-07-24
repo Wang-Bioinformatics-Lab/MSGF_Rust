@@ -321,9 +321,11 @@ dependencies = [
 name = "msgf-genfunc"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "msgf-chem",
  "msgf-io",
  "msgf-scorer",
+ "rayon",
  "serde_json",
 ]
 
