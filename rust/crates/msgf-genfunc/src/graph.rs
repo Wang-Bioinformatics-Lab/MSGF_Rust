@@ -79,9 +79,9 @@ pub fn build_reverse_graph(
         if sink_set.contains(&m) || m >= complement_mass {
             continue; // sinks and out-of-range nodes score 0
         }
-        nodes[m as usize].node_score = (scored.node_score(complement_mass - m, true)
-            + scored.node_score(m, false))
-        .round() as i32;
+        nodes[m as usize].node_score = msgf_chem::round_half_up(
+            scored.node_score(complement_mass - m, true) + scored.node_score(m, false),
+        );
     }
     for m in 1..=graph_max {
         for a in aa {

@@ -254,7 +254,7 @@ impl<'a> ScoredSpectrum<'a> {
     fn error_score(&self, error: f32) -> f32 {
         let part = self.edge_partition.expect("edge partition present");
         let esf = self.model.error_scaling_factor;
-        let ei = ((error * esf as f32).round() as i32).clamp(-esf, esf) + esf;
+        let ei = msgf_chem::round_half_up(error * esf as f32).clamp(-esf, esf) + esf;
         let ed = &self.model.error_dist[part];
         (ed.signal[ei as usize] as f64 / ed.noise[ei as usize] as f64).ln() as f32
     }
@@ -277,7 +277,7 @@ impl<'a> ScoredSpectrum<'a> {
         if index == 3 {
             edge += self.error_score(cur_mass - prev_mass - theo_mass);
         }
-        edge.round() as i32
+        msgf_chem::round_half_up(edge)
     }
 
     /// Full RawScore (node + edge) for a peptide, mirroring `DBScanScorer.getScore`. `nominal_prefix`
@@ -301,7 +301,8 @@ impl<'a> ScoredSpectrum<'a> {
         let mut score = 0i32;
         for &pm in &nominal[from..to - 1] {
             let sm = pep - pm;
-            score += (self.node_score(pm, true) + self.node_score(sm, false)).round() as i32;
+            score +=
+                msgf_chem::round_half_up(self.node_score(pm, true) + self.node_score(sm, false));
         }
         score += MODIFIED_EDGE_PENALTY * num_mods;
 
@@ -335,7 +336,7 @@ pub fn raw_score_nodes(prefix: &[f32], suffix: &[f32], nominal_prefix_masses: &[
     for &pm in &nominal_prefix_masses[..nominal_prefix_masses.len().saturating_sub(1)] {
         let sm = pep - pm;
         if pm >= 0 && sm >= 0 && (pm as usize) < prefix.len() && (sm as usize) < suffix.len() {
-            score += (prefix[pm as usize] + suffix[sm as usize]).round() as i32;
+            score += msgf_chem::round_half_up(prefix[pm as usize] + suffix[sm as usize]);
         }
     }
     score

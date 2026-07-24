@@ -118,6 +118,14 @@ pub fn mz(neutral: f64, charge: u32) -> f64 {
     (neutral + charge as f64 * mass::PROTON) / charge as f64
 }
 
+/// Round to nearest integer, ties toward +∞ — matches Java `Math.round(float)` = `floor(x + 0.5)`.
+/// This differs from Rust's `f32::round` (ties away from zero) on negative half-values, which the
+/// generating function hits across thousands of nodes, so scores must use this.
+#[inline]
+pub fn round_half_up(x: f32) -> i32 {
+    (x + 0.5).floor() as i32
+}
+
 /// A singly/doubly-charged fragment ion at a cleavage position.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FragmentIon {
