@@ -30,7 +30,7 @@ validation/
 │   │                         # committed (chemistry/, param_inventory) vs generated locally
 │   ├── iprg2013_F13.golden.json   # authoritative MS-GF+ high-res search, 4,133 PSMs [generated]
 │   ├── worked_example.golden.json # 2 MS-GF+-authored PSMs (no Java needed)         [generated]
-│   ├── fdr/fdrmap_cases.golden.json    # MS-GF+ target-decoy q-value maps, 14 synthetic cases
+│   ├── fdr/fdrmap_cases.golden.json    # MS-GF+ target-decoy q-value maps, 14 cases  [generated]
 │   ├── chemistry/                      # physics-based, ours                        [COMMITTED]
 │   ├── spectra/  models/               # UC-derived fixtures                        [generated]
 ├── regression/

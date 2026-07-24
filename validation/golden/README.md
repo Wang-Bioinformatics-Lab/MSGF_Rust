@@ -14,7 +14,7 @@ These carry no MS-GF+ content, so they stay in git and their tests assert (rathe
 ## Not committed (derived from MS-GF+ or its UC-licensed data)
 
 Everything else: `iprg2013_F13.*`, `worked_example.golden.json`, `rawscore/`, `spectra/`,
-`models/*.model.golden.json`, `models/node_scores.golden.json`.
+`models/*.model.golden.json`, `models/node_scores.golden.json`, `fdr/**`.
 
 These are the project's numeric oracle and they remain essential — they are simply **generated on
 your machine instead of shipped**, exactly like `../data/`. The reason is licensing: they are
@@ -38,4 +38,5 @@ Without this step the golden-backed tests **skip** — `cargo test` on a clean c
 it just validates less. `cargo test -- --nocapture | grep skip:` shows what was skipped.
 
 The no-Java families (`chemistry/`, `spectra/`, `param_inventory`) can be rebuilt from
-`../reference/make_*.py` alone; the rest need the jar.
+`../reference/make_*.py` alone; the rest need the jar. `fdr/` is the cheapest of those —
+`../reference/make_fdr_golden.sh` needs only the jar and a JVM, no spectra, models or database.

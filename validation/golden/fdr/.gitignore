@@ -1,0 +1,4 @@
+# Derived by running MS-GF+ (UC Regents, non-commercial license), so these bytes are NOT committed
+# — regenerate with ../../reference/make_fdr_golden.sh (needs only MSGFPlus.jar and a JVM).
+# msgf-fdr/tests/golden_fdrmap.rs skips when the file is absent.
+fdrmap_cases.golden.json
