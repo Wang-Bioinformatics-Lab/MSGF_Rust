@@ -48,6 +48,23 @@ pub fn rank_by_intensity(peaks: &[(f32, f32)]) -> Vec<RankedPeak> {
     out
 }
 
+/// Build the integer-m/z bucket index: `bucket[b]` = index of the first peak with `mz >= b`.
+/// Buckets past the last peak point one-past-the-end. Peaks must be sorted by `mz` ascending.
+fn build_peak_bucket(peaks: &[RankedPeak]) -> Vec<u32> {
+    let max_mz = peaks.last().map(|p| p.mz).unwrap_or(0.0);
+    let nb = (max_mz.max(0.0).floor() as usize) + 2;
+    let mut bucket = vec![peaks.len() as u32; nb];
+    let mut bi = 0usize;
+    for (i, p) in peaks.iter().enumerate() {
+        let b = p.mz.max(0.0).floor() as usize;
+        while bi <= b {
+            bucket[bi] = i as u32;
+            bi += 1;
+        }
+    }
+    bucket
+}
+
 /// Most intense peak within `±tol_da` of `mz`, or `None`. Peaks must be sorted by `mz` ascending.
 ///
 /// Mirrors `Spectrum.getPeakByMass` = `Collections.max(window, IntensityComparator)`, whose order
@@ -76,6 +93,10 @@ pub struct ScoredSpectrum<'a> {
     model: &'a ScoringModel,
     parent_mass: f32,
     peaks: Vec<RankedPeak>, // sorted by mz ascending
+    /// `peak_bucket[b]` = index of the first peak with `mz >= b` (integer m/z). Lets
+    /// `peak_by_mass_idx` start the window scan in O(1) instead of a per-lookup binary search —
+    /// the scoring node scans thousands of theoretical masses per spectrum.
+    peak_bucket: Vec<u32>,
     /// Partition index serving each segment. Constant per spectrum, so it is precomputed once
     /// rather than re-running the partition `floor` lookup for every nominal mass scored.
     seg_partition: Vec<Option<usize>>,
@@ -110,6 +131,7 @@ impl<'a> ScoredSpectrum<'a> {
         mut peaks: Vec<RankedPeak>,
     ) -> Self {
         peaks.sort_by(|a, b| a.mz.partial_cmp(&b.mz).unwrap());
+        let peak_bucket = build_peak_bucket(&peaks);
         let seg_partition: Vec<Option<usize>> = (0..model.num_segments)
             .map(|seg| Self::partition_for(model, charge, parent_mass, seg))
             .collect();
@@ -155,6 +177,7 @@ impl<'a> ScoredSpectrum<'a> {
             model,
             parent_mass,
             peaks,
+            peak_bucket,
             seg_partition,
             main_ion,
             ion_existence_cache,
@@ -181,6 +204,31 @@ impl<'a> ScoredSpectrum<'a> {
 
     fn tol_da(&self, mz: f32) -> f32 {
         self.model.mme.window_da(mz as f64) as f32
+    }
+
+    /// [`peak_by_mass`] using the `peak_bucket` index for the window start — returns the identical
+    /// peak (same `±tol_da` window, same intensity/highest-m/z tiebreak), just without the binary
+    /// search. Bit-for-bit equivalent, so all scoring goldens are unaffected.
+    fn peak_by_mass_idx(&self, mz: f32, tol_da: f32) -> Option<&RankedPeak> {
+        let lo = mz - tol_da;
+        let hi = mz + tol_da;
+        let b = lo.max(0.0).floor() as usize;
+        let mut start = self.peak_bucket.get(b).copied().unwrap_or(self.peaks.len() as u32) as usize;
+        // The bucket gives the first peak with `mz >= b` (b ≤ lo); step to the first `mz >= lo`.
+        while start < self.peaks.len() && self.peaks[start].mz < lo {
+            start += 1;
+        }
+        let mut best: Option<&RankedPeak> = None;
+        for p in &self.peaks[start..] {
+            if p.mz > hi {
+                break;
+            }
+            match best {
+                Some(bp) if p.intensity < bp.intensity => {}
+                _ => best = Some(p),
+            }
+        }
+        best
     }
 
     /// `getSegmentNum`: which mass segment a theoretical m/z falls in.
@@ -239,7 +287,7 @@ impl<'a> ScoredSpectrum<'a> {
                 if self.segment_num(theo) != seg {
                     continue;
                 }
-                score += match peak_by_mass(&self.peaks, theo, self.tol_da(theo)) {
+                score += match self.peak_by_mass_idx(theo, self.tol_da(theo)) {
                     Some(p) => self.model.node_score(part_idx, ion, p.rank),
                     None => self.model.missing_ion_score(part_idx, ion),
                 };
@@ -307,7 +355,7 @@ impl<'a> ScoredSpectrum<'a> {
             return -1.0;
         };
         let theo = main_ion.mz(scaling::nominal_to_mass(nominal));
-        match peak_by_mass(&self.peaks, theo, self.tol_da(theo)) {
+        match self.peak_by_mass_idx(theo, self.tol_da(theo)) {
             Some(p) => main_ion.mass(p.mz),
             None => -1.0,
         }
