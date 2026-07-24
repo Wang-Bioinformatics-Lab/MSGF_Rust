@@ -82,8 +82,10 @@ pub fn summary(psms: &[Psm], has_decoys: bool) -> String {
     let n = psms.len();
     let targets = psms.iter().filter(|p| !p.is_decoy).count();
     if !has_decoys {
+        // `has_decoys` is about the *result set*, not the database — a decoy-containing database can
+        // still yield no decoy match (and does when nothing matches at all). Say which.
         return format!(
-            "{n} PSM(s); no decoys in the database, so q-values are not an FDR estimate"
+            "{n} PSM(s); no decoy matches among them, so q-values are not an FDR estimate"
         );
     }
     let at_1 = crate::n_targets_below(psms, 0.01);
