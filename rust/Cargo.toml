@@ -5,6 +5,7 @@ members = [
     "crates/msgf-io",
     "crates/msgf-scorer",
     "crates/msgf-genfunc",
+    "crates/msgf-cli",
 ]
 
 [workspace.package]

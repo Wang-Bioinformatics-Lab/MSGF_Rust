@@ -318,6 +318,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "msgf-cli"
+version = "0.1.0"
+dependencies = [
+ "msgf-chem",
+ "msgf-genfunc",
+ "msgf-io",
+ "msgf-scorer",
+ "serde_json",
+]
+
+[[package]]
 name = "msgf-genfunc"
 version = "0.1.0"
 dependencies = [

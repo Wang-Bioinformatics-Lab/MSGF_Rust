@@ -1,0 +1,328 @@
+# MSGF_Rust
+
+A fast Rust reimplementation of **MS-GF+ significance scoring** — the generating-function spectral
+E-value (**SpecEValue**) for high-resolution tandem mass spectrometry — validated to be
+**bit-exact** against the reference Java [MS-GF+](https://github.com/MSGFPlus/msgfplus).
+
+Given an MS/MS spectrum and a candidate peptide, MSGF_Rust reproduces MS-GF+'s three scores:
+
+| Score | Meaning |
+|---|---|
+| **RawScore** | Integer match score: how strongly the observed peaks support the peptide's b/y fragment ions. |
+| **DeNovoScore** | The maximum RawScore achievable by *any* peptide of the precursor mass (the best path through the de novo graph). |
+| **SpecEValue** | The significance: `P(score ≥ RawScore)` over the ensemble of all peptides of that mass — the spectral E-value / p-value. |
+
+On the validation set the Java implementation is the numeric **oracle**: RawScore and DeNovoScore
+match **exactly** (30/30 PSMs), and SpecEValue agrees to f64 accumulation noise (`|Δlog10| ≤ 0.05`,
+observed worst `≈3e-5`). It is also faster — see [PERFORMANCE.md](PERFORMANCE.md) (~1.2× single-core,
+near-linear across cores).
+
+> **What this is not (yet):** a database search. There is no fragment-index candidate generation —
+> candidate peptides come from *you* (a PSM list to rescore). The Sage-inspired search engine
+> (`msgf-search`) is a later phase. See [PLAN.md](PLAN.md) for the full design and roadmap.
+
+- [Install](#install)
+- [Command line: `msgf rescore`](#command-line-msgf-rescore)
+  - [File formats](#file-formats)
+- [Use as a library](#use-as-a-library)
+- [Reproducing MS-GF+ exactly](#reproducing-ms-gf-exactly)
+- [Repository layout](#repository-layout)
+
+---
+
+## Install
+
+### From a release binary
+
+Tagged releases attach prebuilt `msgf` binaries for Linux (glibc + static musl), macOS (Intel +
+Apple Silicon), and Windows. Download the archive for your platform from the
+[Releases page](https://github.com/mwang87/MSGF_Rust/releases), verify the checksum, and unpack:
+
+```bash
+tar -xzf msgf-v0.1.0-x86_64-unknown-linux-musl.tar.gz
+./msgf-v0.1.0-x86_64-unknown-linux-musl/msgf --help
+```
+
+Binaries are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) on every
+`v*` tag (a manual workflow run also publishes them as downloadable CI artifacts).
+
+### From source
+
+Requires a recent stable Rust (developed on 1.94). The workspace lives under `rust/`:
+
+```bash
+cd rust
+cargo build --release -p msgf-cli     # binary at rust/target/release/msgf
+./target/release/msgf --help
+```
+
+Other common commands:
+
+```bash
+cargo test --workspace                # unit tests + golden validation (skips if data absent)
+cargo clippy --workspace --all-targets
+cargo bench -p msgf-genfunc --bench genfunc   # SpecEValue DP, 1-core + rayon
+```
+
+---
+
+## Command line: `msgf rescore`
+
+`rescore` takes a spectra file and a list of peptide-spectrum matches, and recomputes RawScore,
+DeNovoScore and SpecEValue for each. The generating function depends only on the spectrum (not on
+any one peptide), so it is built **once per `(scan, charge)`** and cached; every PSM against that
+spectrum is then a cheap RawScore + tail lookup.
+
+```bash
+msgf rescore \
+  --spectra spectra.mgf \
+  --param   HCD_HighRes_Tryp.param \
+  --psms    identifications.tsv \
+  --out     rescored.tsv
+```
+
+| Flag | | Description |
+|---|---|---|
+| `-s, --spectra <FILE>` | required | MS/MS spectra in **MGF** format. |
+| `-p, --param <FILE>`   | required | MS-GF+ scoring model (`.param`). Must match the acquisition (activation × resolution × enzyme). |
+| `-i, --psms <FILE>`    | required | PSMs to rescore (**TSV**: `scan`, `peptide`, optional `charge`). |
+| `-o, --out <FILE>`     | optional | Output TSV path (default: stdout). |
+| `--ti <LO,HI>`         | optional | Isotope-error range, like MS-GF+ `-ti` (default `0,1`). |
+| `--aa-probs <FILE>`    | optional | Amino-acid background probabilities (TSV). Default: uniform `0.05`. |
+| `--ox-m`               | optional | Add variable oxidation on M (`+15.994915`) to the graph alphabet. |
+| `--db-size <N>`        | optional | Also emit `evalue = SpecEValue × N` (candidate count). |
+
+PSMs whose scan is missing from the spectra file, that have no charge, or whose peptide can't be
+parsed are **skipped** with a note on stderr; a summary line (`rescored N; skipped M`) is printed at
+the end.
+
+### File formats
+
+#### Spectra — MGF (`--spectra`)
+
+Standard Mascot Generic Format. Each spectrum needs a `SCANS=` id (used to join with the PSM list),
+`CHARGE=`, and `PEPMASS=` (precursor *m/z*), followed by `m/z intensity` peak lines:
+
+```
+BEGIN IONS
+TITLE=scan=2018
+PEPMASS=384.5719
+CHARGE=3+
+SCANS=2018
+110.07130 2905.6
+120.08084 1809.4
+...
+END IONS
+```
+
+The precursor's neutral mass is derived as `PEPMASS × charge − charge × proton`. (mzML support via
+the `mzdata` crate is planned; today the reader is MGF only.)
+
+#### Scoring model — `.param` (`--param`)
+
+The binary MS-GF+ trained scoring model, one per (activation × resolution × enzyme × protocol),
+e.g. `HCD_HighRes_Tryp.param`, `HCD_QExactive_Tryp.param`, `CID_HighRes_Tryp.param`. These are
+**UC-licensed and not committed** to this repo. Fetch them (and the reference spectra/FASTA) with:
+
+```bash
+cd validation && ./fetch_reference_data.sh          # small: models + test spectra + tiny FASTAs
+```
+
+Use the model that matches how the data was acquired. For high-resolution Orbitrap/Q-Exactive HCD
+data searched as MS-GF+ `-inst 1`, that is `HCD_HighRes_Tryp.param`.
+
+#### PSM list — TSV (`--psms`)
+
+Tab-separated, one PSM per line. Columns are located by a header row if present (a line containing
+`peptide`, case-insensitive); otherwise the columns are assumed to be `scan`, `peptide`, `charge`
+in that order.
+
+```
+scan	peptide	charge
+2018	RSRRRRKR	3
+6044	RTLMARPM+15.995IKEAR	2
+6061	K.SIKNIQKITK.A
+```
+
+- **`scan`** — matches an MGF `SCANS=` value.
+- **`peptide`** — MS-GF+ peptide string:
+  - bare sequence `PEPTIDEK`;
+  - optional enzyme context `K.PEPTIDEK.A` (residue before `.` / after `.`; `-` marks a protein
+    terminus). Context is used to score the N-terminal (neighboring) cleavage of semi-tryptic
+    peptides; a bare peptide is assumed fully tryptic.
+  - inline modification deltas `+d` / `-d` on the preceding residue, e.g. `M+15.995`, `+42.011SAM…`.
+  - Only the 20 standard residues are accepted; an unknown residue skips the row.
+- **`charge`** — optional; if omitted, the spectrum's `CHARGE=` is used.
+
+#### Amino-acid probabilities — TSV (`--aa-probs`, optional)
+
+One residue per line, `residue<TAB>probability`; `#` comment lines allowed. These are the
+background (edge) probabilities the generating function weights amino-acid transitions by. Default
+is uniform `0.05` (MS-GF+ *de novo*). To reproduce a real **search's** SpecEValue you must supply
+the searched **database's composition** (see [below](#reproducing-ms-gf-exactly)):
+
+```
+# residue	probability  (e.g. iPRG-2013 human FASTA composition)
+A	0.069428
+R	0.056718
+...
+```
+
+#### Output — TSV (`--out` / stdout)
+
+```
+scan	peptide	charge	raw_score	denovo_score	spec_evalue
+2018	RSRRRRKR	3	40	55	1.057136e-8
+```
+
+| Column | Description |
+|---|---|
+| `scan`, `peptide`, `charge` | Echoed from the input (charge resolved from spectrum if it was omitted). |
+| `raw_score` | Integer RawScore = node+edge match score **+ terminal cleavage**. |
+| `denovo_score` | DeNovoScore: max achievable score for this precursor mass. |
+| `spec_evalue` | SpecEValue: `P(score ≥ raw_score)`. |
+| `evalue` | Only with `--db-size N`: `spec_evalue × N`. |
+
+---
+
+## Use as a library
+
+The scoring pipeline is a linear chain of four crates (all MIT-licensed, `std`-only). Depend on the
+ones you need via path/git; a database-search front-end would build on all of them.
+
+```
+msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc
+(MGF read)   (.param model +    (de novo graph + score-distribution DP → SpecEValue)  ← hot core
+              scored spectrum)
+   msgf-chem  (masses, residues, fragment ions, tolerance, mass-grid scaling) — used by all
+```
+
+| Crate | Key public API |
+|---|---|
+| `msgf-chem` | `mass::{PROTON, WATER, …}`, `scaling::{nominal_bin, high_res_bin}`, `residue_mass`, `peptide::{parse, nominal_prefix_masses, accurate_prefix_masses, num_mods}`, `round_half_up`, `Tolerance`. |
+| `msgf-io` | `Spectrum`, `Peak`, `MgfReader`, `read_mgf_file`. |
+| `msgf-scorer` | `read_param_file → ScoringModel`, `preprocess::preprocess`, `scored_spectrum::ScoredSpectrum::{from_ranked_peaks, node_score, edge_score, raw_score}`. |
+| `msgf-genfunc` | `graph::{build_reverse_graph, standard_aa, Aa}`, `compute`, `merge_group`, `Cleavage`, `GenFunc::{max_score, spectral_probability}`, `ScoreDist`. |
+
+### End-to-end: SpecEValue for one PSM
+
+This is the whole pipeline — the same flow `msgf rescore` runs. The generating function (`gf`) is
+built once per spectrum; scoring more peptides against the same spectrum reuses it.
+
+```rust
+use msgf_chem::{mass, scaling, peptide};
+use msgf_scorer::preprocess::preprocess;
+use msgf_scorer::scored_spectrum::ScoredSpectrum;
+use msgf_genfunc::graph::{build_reverse_graph, standard_aa, Aa};
+use msgf_genfunc::{compute, merge_group, Cleavage};
+
+// 1. Load the trained scoring model once; reuse it across all spectra.
+let model = msgf_scorer::read_param_file("HCD_HighRes_Tryp.param")?;
+
+// 2. Per spectrum: raw (m/z, intensity) peaks, precursor charge, and the neutral precursor mass.
+let charge: i32 = 3;
+let precursor_mz: f32 = 384.5719;
+let raw_peaks: Vec<(f32, f32)> = vec![/* (mz, intensity), … from the MGF */];
+let parent_mass = precursor_mz * charge as f32 - charge as f32 * mass::PROTON as f32;
+
+// 3. Preprocess (precursor filtering, deconvolution, intensity ranking) → scored spectrum.
+let peaks  = preprocess(&model, charge, parent_mass, &raw_peaks);
+let scored = ScoredSpectrum::from_ranked_peaks(&model, charge, parent_mass, peaks);
+
+// 4. Amino-acid alphabet + K/R cleavage probability. `standard_aa()` = 20 residues at uniform 0.05
+//    (de novo). For a *search's* exact SpecEValue, set DB-composition probs instead (see below).
+let aa: Vec<Aa> = standard_aa();
+let prob_cleavage = 0.10; // P(K)+P(R): 0.10 uniform, or the DB-composition sum
+
+// 5. Candidate peptide nominal mass + isotope-error sink range (`-ti 0,1`).
+let pep_nominal = scaling::nominal_bin(parent_mass - mass::WATER as f32);
+let sinks: Vec<i32> = (pep_nominal - 1..=pep_nominal).collect();
+
+// 6. GeneratingFunctionGroup: one graph per candidate mass, DP each, merge.
+let cleave = Cleavage { credit: 2, penalty: -11, prob_cleavage_sites: prob_cleavage };
+let gfs: Vec<_> = sinks.iter().filter_map(|&p| {
+    let (nodes, sink_idx) = build_reverse_graph(&scored, p, &[p], &aa, 2, -11);
+    compute(&nodes, &sink_idx, Some(cleave))
+}).collect();
+let gf = merge_group(&gfs).expect("sinks reachable");
+
+// 7. DeNovoScore needs no peptide — it is the best achievable path.
+let denovo_score = gf.max_score();
+
+// 8. For a candidate peptide: RawScore = node+edge match score + terminal cleavage; SpecEValue is
+//    the upper tail at that RawScore.
+let residues = peptide::parse("RSRRRRKR").unwrap();
+let nominal  = peptide::nominal_prefix_masses(&residues);
+let accurate = peptide::accurate_prefix_masses(&residues);
+let num_mods = peptide::num_mods(&residues) as i32;
+
+let node_edge = scored.raw_score(&nominal, &accurate, num_mods);
+let cleavage  = 4; // +2 per tryptic terminus; see note below for the general rule
+let raw_score = node_edge + cleavage;
+let spec_evalue = gf.spectral_probability(raw_score);
+```
+
+**Gotchas that matter for fidelity:**
+
+- **RawScore = node+edge + terminal cleavage.** `ScoredSpectrum::raw_score` returns only the
+  node+edge match score (MS-GF+'s `DBScanScorer.getScore`). The RawScore MS-GF+ reports — and the
+  value the SpecEValue tail must be looked up at — adds the peptide's terminal cleavage: **+2 credit
+  / −11 penalty at each terminus** (C-terminal = peptide cleavage on the last residue being K/R;
+  N-terminal = neighboring cleavage on the flanking residue). A fully-tryptic peptide contributes
+  `+4`. The general rule is implemented in `msgf-cli`'s `cleavage_score` — reuse it.
+- **DB-composition probabilities are required for a search-exact SpecEValue.** The `aa` edge
+  probabilities and `prob_cleavage_sites` must match the searched database's composition, not the
+  uniform 0.05 default, or the tail will differ from MS-GF+ (`DBScanner.setAminoAcidProbabilities`).
+- **Rounding must match Java.** Use `msgf_chem::round_half_up` (`floor(x+0.5)`) and the two mass
+  scalers in `msgf_chem::scaling` for *all* score/mass discretization — this is what keeps the port
+  bit-exact.
+- **Build the GF once per spectrum.** `gf` (steps 3–6) is independent of the candidate peptide;
+  amortize it across every PSM for that `(scan, charge)`.
+
+---
+
+## Reproducing MS-GF+ exactly
+
+To match a specific MS-GF+ *search* bit-for-bit (RawScore & DeNovoScore exact, SpecEValue to f64
+noise), the scoring configuration must match the search:
+
+1. **Model** — the `.param` for the acquisition (e.g. `HCD_HighRes_Tryp.param` for `-inst 1`).
+2. **Amino-acid probabilities** — the searched database's composition via `--aa-probs`
+   (`DBScanner.setAminoAcidProbabilities`), *not* the uniform default.
+3. **Variable mods** — the same mod set in the graph alphabet (e.g. `--ox-m` for oxidation on M).
+4. **Isotope error** — the same `--ti` range as the search (default `0,1`).
+
+Under this configuration the CLI matches MS-GF+ **30/30** on the F13 iPRG-2013 golden set (RawScore
+and DeNovoScore exact; SpecEValue worst `|Δlog10| ≈ 3e-5`). This is exercised by
+`rust/crates/msgf-cli/tests/golden_rescore.rs` and skips gracefully when the (UC-licensed, un-vendored)
+reference data is absent — run `validation/fetch_reference_data.sh` to enable it.
+
+**Fidelity is the contract.** The value of this project is that the output is bit-exact to MS-GF+,
+not an approximation. Integer scores match exactly; SpecEValue within `|Δlog10| ≤ 0.05`. See
+[CLAUDE.md](CLAUDE.md) and [PLAN.md](PLAN.md) for the validation strategy and the data-absence
+contract.
+
+---
+
+## Repository layout
+
+```
+MSGF_Rust/
+├── README.md              # this file
+├── PLAN.md                # authoritative design doc (phases, algorithm derivation)
+├── PERFORMANCE.md         # Rust-vs-Java timings
+├── rust/                  # the Cargo workspace
+│   ├── README.md          # workspace/crate status
+│   └── crates/
+│       ├── msgf-chem/     # masses, residues, fragment ions, tolerance, mass scaling
+│       ├── msgf-io/       # Spectrum types + MGF reader
+│       ├── msgf-scorer/   # .param loader + preprocessing + scored spectrum (RawScore)
+│       ├── msgf-genfunc/  # de novo graph + generating-function DP → SpecEValue  ← hot core
+│       └── msgf-cli/      # the `msgf` binary (rescore)
+├── validation/            # cross-language oracle: golden JSON + regression (data un-vendored)
+└── .github/workflows/     # release.yml — builds + publishes msgf binaries on tag
+```
+
+**License:** the Rust code is MIT. The reference MS-GF+ `.param` models and spectra are
+UC-licensed and are **not** distributed here; `validation/fetch_reference_data.sh` retrieves them on
+demand. Only derived numeric facts (the golden JSON) are committed.

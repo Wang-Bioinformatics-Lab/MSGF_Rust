@@ -1,0 +1,20 @@
+[package]
+name = "msgf-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Command-line front-end for MSGF_Rust: rescore PSMs to MS-GF+ RawScore / DeNovoScore / SpecEValue"
+
+[[bin]]
+name = "msgf"
+path = "src/main.rs"
+
+[dependencies]
+msgf-chem = { path = "../msgf-chem" }
+msgf-io = { path = "../msgf-io" }
+msgf-scorer = { path = "../msgf-scorer" }
+msgf-genfunc = { path = "../msgf-genfunc" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
