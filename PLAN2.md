@@ -4,10 +4,12 @@ Execution plan for target-decoy analysis (TDA): decoy database construction, PSM
 q-values, and how they wire into the future `msgf-search` engine. Strategy context is `PLAN.md`
 (§7 Phase 6 lists "target-decoy FDR" as a single bullet); this doc is the concrete design.
 
-**Status: TD-1, TD-2 Gate 1 and TD-3 implemented** (`msgf-db`, `msgf-fdr`, `msgf-search`). The
-decoy writer is byte-identical to both reference `.revCat.fasta` files and the q-value columns
-reproduce the F13 golden exactly (1610/1610). **Still open:** TD-2 Gate 2 (the Java `getFDRMap`
-probe over synthetic score lists) and the §4 oracle problem. What we *do* already have is an oracle — the committed
+**Status: TD-1, TD-2 (both gates) and TD-3 implemented** (`msgf-db`, `msgf-fdr`, `msgf-search`).
+The decoy writer is byte-identical to both reference `.revCat.fasta` files; the q-value columns
+reproduce the F13 golden exactly (1610/1610); and the Gate 2 Java probe now pins 110 thresholds
+and 556 lookups across 14 synthetic cases, which **corrected three rules** F13 could not see (see
+§1.4 and §3). **Still open:** the §4 oracle problem — there is no benchmark on which "ID counts at
+1 % FDR" can be compared to Java at all. What we *do* already have is an oracle — the committed
 `validation/golden/iprg2013_F13.golden.json` carries `protein`, `qvalue` and `pep_qvalue` per PSM,
 and `fetch_reference_data.sh --full` puts Java-generated decoy FASTAs on disk
 (`iprg2013_human.revCat.fasta`, `Tryp_Pig_Bov.revCat.fasta`).
@@ -60,12 +62,12 @@ shared between a target and a decoy protein counts as **target**.
 - q-value conversion: running minimum walking from worst key to best.
 - Lookup is `higherEntry(score)` — the value at the **strictly next-larger** key — which is why a
   score exactly equal to a map key resolves to the next-worse threshold's q-value.
-  - **Correction (measured):** `higherEntry` reproduces 1609/1610 of the F13 golden — it puts the
-    single best-scoring PSM at q = 1 where MS-GF+ reports 0. A **floor** lookup (largest key ≤
-    score) reproduces 1610/1610, and is what `msgf-fdr` implements. Under the floor lookup the
-    `+∞` sentinel is unreachable (the last computed threshold already governs everything worse),
-    so only the `−∞` sentinel is seeded. F13 is a weak discriminator here (§4: it yields just two
-    distinct q-values), so **Gate 2's Java probe is still what settles the edge cases**.
+  - **Settled by the Gate 2 probe.** An earlier reading of F13 alone suggested a floor lookup
+    (largest key ≤ score) instead; `DumpFdrMap.java` shows that is wrong. Probing each threshold's
+    immediate float neighbours, MS-GF+ answers `q(1e-7) = 0.25` for the threshold `1e-7 → 0.0`,
+    i.e. the **next** threshold's value — `higherEntry`, as the source says. On F13 the two rules
+    happen to agree (§4: only two distinct q-values), which is exactly why the synthetic probe was
+    needed. `msgf-fdr` now implements `higherEntry`, with **both** `±∞` sentinels seeded.
 - Reported as `QValue` (MS:1002054) and `PepQValue` (MS:1002055).
 
 **Verified:** a Python transcription of exactly the above reproduces both columns for all 1610
@@ -122,12 +124,24 @@ New crate `msgf-db` (FASTA today; the natural home for digestion and the fragmen
 The golden is committed, so this runs on a fresh clone. Requires rolling the `-unroll 1` TSV rows
 (4133) back up into one record per match (1610) — MS-GF+ counts *matches*, not protein occurrences.
 
-*Gate 2 (the real coverage):* a small Java probe `validation/reference/java/DumpFdrMap.java` calling
-`TargetDecoyAnalysis.getFDRMap` on seeded pseudo-random target/decoy score lists — plus the edge
-cases: ties across and within lists, empty decoy list, all decoys better than all targets,
-single-element lists, the early `break` at FDR ≥ 1 — frozen to
-`validation/golden/fdr/fdrmap_cases.golden.json`. Rust must match every `(key, q)` pair bit-for-bit.
-This matters because F13 alone is a degenerate oracle (§4).
+*Gate 2 (the real coverage): **done**.* `validation/reference/java/DumpFdrMap.java` (run by
+`make_fdr_golden.sh`, JVM + jar only — no spectra, models or database) drives
+`TargetDecoyAnalysis.getFDRMap` **and** `getPSMQValue` over 14 cases: ties within and across the
+lists, an empty decoy list, an empty target list, all-decoys-better, single-element lists, the
+`target_index == 0` skip, the early `break` at FDR ≥ 1, a non-monotone raw sweep, and three seeded
+pseudo-random sets. Every threshold's immediate float neighbours are probed, which is what pins the
+lookup rule. Frozen to `validation/golden/fdr/fdrmap_cases.golden.json` (committed) and checked
+bit-for-bit by `msgf-fdr/tests/golden_fdrmap.rs` — 110 thresholds, 556 lookups — plus a no-JVM
+re-derivation in `validation/regression/run_regression.py`.
+
+Three rules the F13 gate could not see were **wrong** before this probe, each of which silently
+mis-reports q-values on data where targets and decoys actually separate:
+
+1. a run of equal decoy scores was charged at its *last* index instead of its first (Java takes
+   `decoy_index` from the run's first member, so `tie_within_decoys` is FDR 0/2, not 1);
+2. a threshold with no better target ended the sweep instead of being skipped, so
+   `guard_no_target_better` reported q = 1 everywhere where MS-GF+ reports 1/3;
+3. the lookup was a floor instead of `higherEntry` (§1.4).
 
 ### TD-3 — wire into `msgf-search` *(blocked on the engine)*
 
@@ -175,9 +189,10 @@ Consequences:
 
 ## 5. Goldens and the data contract
 
-- New: `validation/golden/fdr/fdrmap_cases.golden.json` (Java probe, committed, JVM only at
-  generation time), wired into `validation/reference/generate_golden.sh` and re-derivable without
-  Java by a Python transcription in `validation/regression/`.
+- **Done:** `validation/golden/fdr/fdrmap_cases.golden.json` (Java probe, committed, JVM only at
+  generation time), generated by `validation/reference/make_fdr_golden.sh` (also run by
+  `build_all_golden.sh --with-java`) and re-derived without Java by `_fdr_map()` in
+  `validation/regression/run_regression.py`.
 - Edit: add `qvalue`/`pep_qvalue` to the `compare` block of `iprg2013_F13.golden.json` with
   `assert: exact` — the fields are already present in the file, so this is a `parse_msgf_tsv.py`
   change, not a golden regeneration.

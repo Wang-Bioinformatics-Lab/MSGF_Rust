@@ -9,7 +9,7 @@ become its oracle (the compare semantics are recorded inside each golden json).
 
 Exit code 0 = all checks pass; nonzero = at least one failure (CI-friendly).
 """
-import json, os, sys, math, importlib.util
+import json, os, sys, math, struct, importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
@@ -138,12 +138,70 @@ def test_msgf_golden():
         print(f"  [{fn}: {g['n_psms']} PSMs]")
 
 
+def _f32(x):
+    """Round an f64 to the nearest f32 — the Java oracle computes q-values in `float`."""
+    return struct.unpack("f", struct.pack("f", x))[0]
+
+
+def _fdr_map(targets, decoys, pit=1.0):
+    """Transcription of edu.ucsd.msjava.fdr.TargetDecoyAnalysis.getFDRMap, smaller-is-better.
+
+    A run of equal decoy scores is charged at its first index; a threshold with no better target
+    is skipped without stopping the sweep; both infinite sentinels are seeded (the upper one at 0
+    when there are no decoys); FDRs become q-values by a running minimum from worst to best.
+    """
+    t, d = sorted(targets), sorted(decoys)
+    swept, ti, prev = [], 0, None
+    for di, key in enumerate(d):
+        if key == prev: continue
+        prev = key
+        while ti < len(t) and t[ti] < key: ti += 1
+        if ti == 0: continue                     # no entry, but the sweep carries on
+        fdr = 1.0 if ti <= di else min(_f32(math.floor(di * pit + 0.5) / ti), 1.0)
+        swept.append((key, fdr))
+        if fdr >= 1.0: break
+    pairs = [(-math.inf, 0.0)] + swept + [(math.inf, 1.0 if d else 0.0)]
+    run = 1.0
+    for i in range(len(pairs) - 1, -1, -1):
+        run = min(run, pairs[i][1]); pairs[i] = (pairs[i][0], run)
+    return pairs
+
+
+def _q_value(pairs, score):
+    """Java TreeMap.higherEntry: the least threshold strictly greater than `score`."""
+    for k, q in pairs:
+        if k > score: return q
+    return pairs[-1][1]
+
+
+def test_fdr_map():
+    """Re-derive the Java-dumped target-decoy cases (PLAN2 TD-2 Gate 2) without a JVM."""
+    p = os.path.join(GOLDEN, "fdr", "fdrmap_cases.golden.json")
+    if not os.path.exists(p):
+        print("  (fdr golden absent — run reference/make_fdr_golden.sh, JVM only)"); return
+    g = load(p)
+    for case in g["cases"]:
+        name = case["name"]
+        targets = [float(s) for s in case["targets"]]
+        decoys = [float(s) for s in case["decoys"]]
+        pairs = _fdr_map(targets, decoys)
+        want = [(float(e["key"]), _f32(float(e["q"]))) for e in case["map"]]
+        check(f"fdrmap[{name}].map", pairs == want, f"{pairs} vs {want}")
+        n_bad = sum(1 for l in case["lookups"] if l["q"] is not None
+                    and _q_value(pairs, float(l["score"])) != _f32(float(l["q"])))
+        check(f"fdrmap[{name}].lookups", n_bad == 0, f"{n_bad}/{len(case['lookups'])} differ")
+        qs = [q for _, q in pairs]
+        check(f"fdrmap[{name}].monotone", all(a <= b for a, b in zip(qs, qs[1:])))
+    print(f"  [{len(g['cases'])} target-decoy cases re-derived from MS-GF+'s inputs]")
+
+
 def main():
     print("== chemistry =="); test_chemistry()
     print("== spectra =="); test_spectra()
     print("== param inventory =="); test_param_inventory()
     print("== worked example =="); test_worked_example()
     print("== msgf search goldens =="); test_msgf_golden()
+    print("== target-decoy fdr =="); test_fdr_map()
     print(f"\n{'OK' if FAIL==0 else 'FAILED'}: {PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
 

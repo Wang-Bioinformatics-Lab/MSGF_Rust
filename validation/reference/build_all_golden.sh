@@ -21,6 +21,8 @@ if [[ "${1:-}" == "--with-java" ]]; then
   bash "$HERE/make_model_goldens.sh"
   echo "### node-score goldens (getNodeScore / getMissingIonScore)"
   bash "$HERE/make_nodescore_goldens.sh"
+  echo "### target-decoy FDR golden (TargetDecoyAnalysis on synthetic score lists)"
+  bash "$HERE/make_fdr_golden.sh"
   echo "### MS-GF+ high-res search golden (F13)"
   if command -v conda >/dev/null && conda env list | grep -q msgfjava; then
     TAG=iprg2013_F13 conda run -n msgfjava bash "$HERE/generate_golden.sh"
