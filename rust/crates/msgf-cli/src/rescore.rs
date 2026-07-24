@@ -25,16 +25,18 @@ pub const USAGE: &str = "\
 msgf rescore — recompute MS-GF+ scores for a PSM list
 
 USAGE:
-    msgf rescore --spectra <FILE.mgf> --param <MODEL.param> --psms <PSMS.tsv> [OPTIONS]
+    msgf rescore --spectra <FILE.mgf> --psms <PSMS.tsv> [OPTIONS]
 
 Recompute MS-GF+ RawScore, DeNovoScore and SpecEValue for each input PSM.
 
 REQUIRED:
     -s, --spectra <FILE>   MS/MS spectra, MGF format (must carry SCANS=, CHARGE=, PEPMASS=)
-    -p, --param   <FILE>   MS-GF+ scoring model (.param, e.g. HCD_HighRes_Tryp.param)
     -i, --psms    <FILE>   PSMs to rescore, TSV: columns `scan`, `peptide`, optional `charge`
 
 OPTIONS:
+    -p, --param   <FILE>   Scoring model (.param). Default: the bundled HCD/HighRes/Tryptic
+                           model trained from MassIVE-KB (CC0) — pass a file for another
+                           activation/instrument/enzyme, e.g. MS-GF+'s own models.
     -o, --out     <FILE>   Output TSV (default: stdout)
         --ti      <LO,HI>  Isotope-error range, like MS-GF+ -ti (default: 0,1)
         --aa-probs <FILE>  Amino-acid background probabilities, TSV `residue<TAB>prob`
@@ -60,7 +62,7 @@ NOTES:
 
 pub struct Config {
     spectra: PathBuf,
-    param: PathBuf,
+    param: Option<PathBuf>,
     psms: PathBuf,
     out: Option<PathBuf>,
     ti: (i32, i32),
@@ -120,7 +122,7 @@ impl Config {
         }
         Ok(Config {
             spectra: spectra.ok_or("missing --spectra")?,
-            param: param.ok_or("missing --param")?,
+            param,
             psms: psms.ok_or("missing --psms")?,
             out,
             ti,
@@ -155,8 +157,8 @@ struct Prepared<'m> {
 }
 
 pub fn run(cfg: &Config) -> Result<(), String> {
-    let model = msgf_scorer::read_param_file(&cfg.param)
-        .map_err(|e| format!("reading model {}: {e:?}", cfg.param.display()))?;
+    let (model, model_source) = crate::model::load(cfg.param.as_deref())?;
+    crate::model::announce(&model_source, &model);
     let spectra = index_spectra(&cfg.spectra)?;
     let psms = read_psms(&cfg.psms)?;
     let (aa, prob_cleavage) = build_alphabet(cfg.aa_probs.as_deref(), cfg.ox_m)?;

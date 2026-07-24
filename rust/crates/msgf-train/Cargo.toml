@@ -1,0 +1,16 @@
+[package]
+name = "msgf-train"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Clean-room trainer that counts a fragment-scoring model (.param) from annotated spectra"
+
+[dependencies]
+msgf-chem = { path = "../msgf-chem" }
+msgf-scorer = { path = "../msgf-scorer" }
+rayon = { workspace = true }
+
+[[bin]]
+name = "msgf-train"
+path = "src/bin/train.rs"

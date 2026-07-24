@@ -8,6 +8,7 @@ members = [
     "crates/msgf-db",
     "crates/msgf-fdr",
     "crates/msgf-search",
+    "crates/msgf-train",
     "crates/msgf",
     "crates/msgf-cli",
 ]

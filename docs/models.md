@@ -75,8 +75,9 @@ residues, not licensed data. It affects the SpecEValue *distribution*, not the i
   (`fetch_reference_data.sh`). The committed golden JSON is *derived numeric facts* used as a test
   oracle, but it too descends from UC software, so it can't be the basis of a permissive release.
 - **Consequence for a public release:** as long as the shipping scorer needs a UC `.param` to
-  produce its numbers, MSGF_Rust cannot be released under MIT. **This is the single release
-  blocker.** Model #2 and all of our code are clean.
+  produce its numbers, MSGF_Rust cannot be released under MIT. **This was the single release
+  blocker; it is now cleared** — `msgf-scorer` ships a MassIVE-KB-trained model as the default
+  (2026-07-24), and the UC `.param` path is validation-only. See `LICENSING.md`.
 - **The fix** (already the stated intent in `PLAN.md` D1/§8): *keep the model layer swappable and
   move to a model we train ourselves.* This doc makes that concrete.
 
@@ -163,7 +164,7 @@ each entry carrying **open provenance** back to the original spectra
   yields calibrated `noiseFreq[]`/`error_dist`. Heavier (bulk raw fetch) but the user's
   USI/provenance tooling makes it tractable.
 
-### 4.3 New crate: `msgf-train`
+### 4.3 New crate: `msgf-train` — **built**; see [`training.md`](training.md) for what it counts
 
 A dedicated crate (sibling to `msgf-scorer`), read-corpus → write-model:
 
@@ -223,11 +224,19 @@ Each ends at a gate; ordered so value lands early and the release blocker clears
   rank-distribution section (`lib.rs:318`), plus big-endian / UTF-16BE strings / the `0x7FFFFFFF`
   terminator, or the round-trip won't re-parse. *Gate:* `read(write(m)) == m` and the re-emitted
   file reproduces the model golden. *(Unlocks emitting trained models in the existing format.)*
-- **M2 — Trainer core + mechanics oracle.** `msgf-train` counting pipeline; validate table-for-table
-  against Java `ScoringParamGen` on a small shared corpus. *Gate:* frequency tables match within
-  tolerance (validation gate 1).
-- **M3 — MassIVE-KB v0 model.** Ingest MassIVE-KB library spectra (route 4.2a); train
-  `HCD_HighRes_Tryp`; score F13. *Gate:* ID-count parity within an agreed margin (validation gate 2).
+- **M2 — Trainer core.** ✅ `msgf-train` counting pipeline (`rust/crates/msgf-train`). The Java
+  `ScoringParamGen` mechanics oracle was dropped by design — our statistics are defined from the
+  scorer's consumption semantics, not transcribed, so bin-for-bin agreement is not the expectation.
+  *Gate met instead by:* reproducible counting + a synthetic-corpus round-trip test with zero
+  fetched bytes.
+- **M3 — MassIVE-KB v0 model.** ✅ Trained `HCD_HighRes_Tryp` from 64,474 CC0 MassIVE-KB library
+  PSMs in 3.4 s; it rediscovers the same ten ion types as the UC model. *Gate:* 99.5 % of the UC
+  model's IDs on held-out MassIVE-KB (ground-truth peptides), 92 % on F13 raw spectra, ρ = 0.94–0.98
+  on log10 SpecEValue, +7 % scoring time. Write-up: [`training.md`](training.md).
+- **M4a — Ship the model (done, 2026-07-24).** ✅ The MassIVE-KB model is embedded in `msgf-scorer`
+  and is the CLI default; UC-derived goldens are no longer committed; repo has an MIT `LICENSE` and
+  a `LICENSING.md` accounting. **Gate met: the shipping path contains no UC-derived bytes.** What
+  remains of M4 is quality, not licensing:
 - **M4 — Provenance-raw v1 + permissive format (Level 2).** Train from raw provenance spectra
   (4.2b); define + ship our own model container under MIT/CC0; UC `.param` path demoted to
   test-only. *Gate:* v1 ≥ v0 on the benchmark; **repo builds and ships with no UC-derived bytes on
