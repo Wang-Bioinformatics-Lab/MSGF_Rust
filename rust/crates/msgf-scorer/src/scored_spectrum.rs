@@ -10,8 +10,12 @@
 //! yet — `from_ranked_peaks` takes peaks that already carry ranks, so this layer can be validated
 //! against MS-GF+'s own preprocessed peaks independently of the preprocessing port.
 
-use crate::ScoringModel;
-use msgf_chem::scaling;
+use crate::{FragOff, ScoringModel};
+use msgf_chem::{mass, scaling};
+use std::collections::HashMap;
+
+/// `FlexAminoAcidGraph.MODIFIED_EDGE_PENALTY` (0 in current MS-GF+).
+const MODIFIED_EDGE_PENALTY: i32 = 0;
 
 /// A peak with its intensity rank (1 = most intense), as MS-GF+ ranks them.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,6 +79,12 @@ pub struct ScoredSpectrum<'a> {
     /// Partition index serving each segment. Constant per spectrum, so it is precomputed once
     /// rather than re-running the partition `floor` lookup for every nominal mass scored.
     seg_partition: Vec<Option<usize>>,
+    /// Partition used for edge scoring (`getPartition` at the last segment).
+    edge_partition: Option<usize>,
+    /// The dominant ion type (`mainIon`) for this precursor — used for `getNodeMass`.
+    main_ion: Option<FragOff>,
+    /// `probPeak` for the ion-existence edge score.
+    prob_peak: f32,
 }
 
 impl<'a> ScoredSpectrum<'a> {
@@ -86,15 +96,41 @@ impl<'a> ScoredSpectrum<'a> {
         mut peaks: Vec<RankedPeak>,
     ) -> Self {
         peaks.sort_by(|a, b| a.mz.partial_cmp(&b.mz).unwrap());
-        let seg_partition = (0..model.num_segments)
+        let seg_partition: Vec<Option<usize>> = (0..model.num_segments)
             .map(|seg| Self::partition_for(model, charge, parent_mass, seg))
             .collect();
+        let edge_partition = *seg_partition.last().unwrap_or(&None);
+        let main_ion = Self::compute_main_ion(model, &seg_partition);
+        // probPeak = |peaks| / max(peptideMass / (2·mme), 1), per NewScoredSpectrum
+        let peptide_mass = parent_mass - mass::WATER as f32;
+        let approx_bins = (peptide_mass / (model.mme.value as f32 * 2.0)).max(1.0);
+        let prob_peak = (peaks.len().max(1) as f32) / approx_bins;
         Self {
             model,
             parent_mass,
             peaks,
             seg_partition,
+            edge_partition,
+            main_ion,
+            prob_peak,
         }
+    }
+
+    /// `determineIonTypes` main ion: sum fragment frequencies across the segment partitions of
+    /// this precursor's (charge, parent_mass) group, keyed by (name, exact offset), and pick the max.
+    fn compute_main_ion(model: &ScoringModel, seg_partition: &[Option<usize>]) -> Option<FragOff> {
+        let mut acc: HashMap<(&str, u32), (f32, &FragOff)> = HashMap::new();
+        for &pi in seg_partition.iter().flatten() {
+            for fo in &model.frag_off[pi] {
+                let e = acc
+                    .entry((fo.name.as_str(), fo.offset.to_bits()))
+                    .or_insert((0.0, fo));
+                e.0 += fo.frequency;
+            }
+        }
+        acc.into_values()
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+            .map(|(_, fo)| fo.clone())
     }
 
     fn tol_da(&self, mz: f32) -> f32 {
@@ -177,6 +213,112 @@ impl<'a> ScoredSpectrum<'a> {
             suffix[nm as usize] = self.node_score(nm, false);
         }
         (prefix, suffix)
+    }
+
+    // ---- edge scoring: high-res RawScore = node scores + edge scores (DBScanScorer) ----
+
+    /// Whether the main ion is an N-terminal (prefix) ion; drives the edge summation direction.
+    pub fn main_ion_is_prefix(&self) -> bool {
+        self.main_ion.as_ref().map(|i| i.is_prefix).unwrap_or(false)
+    }
+
+    /// `getNodeMass`: the main ion's matched-peak mass for a node, or -1 when absent.
+    fn node_mass(&self, nominal: i32) -> f32 {
+        if nominal == 0 {
+            return 0.0;
+        }
+        let Some(main_ion) = &self.main_ion else {
+            return -1.0;
+        };
+        let theo = main_ion.mz(scaling::nominal_to_mass(nominal));
+        match peak_by_mass(&self.peaks, theo, self.tol_da(theo)) {
+            Some(p) => main_ion.mass(p.mz),
+            None => -1.0,
+        }
+    }
+
+    /// `getIonExistenceScore(partition, index, probPeak)`.
+    fn ion_existence_score(&self, index: usize) -> f32 {
+        let part = self.edge_partition.expect("edge partition present");
+        let ie = self.model.error_dist[part].ion_existence;
+        let noise = match index {
+            0 => (1.0 - self.prob_peak) * (1.0 - self.prob_peak),
+            3 => self.prob_peak * self.prob_peak,
+            _ => self.prob_peak * (1.0 - self.prob_peak),
+        };
+        let ip = if ie[index] == 0.0 { 0.01 } else { ie[index] };
+        (ip as f64 / noise as f64).ln() as f32
+    }
+
+    /// `getErrorScore(partition, error)`.
+    fn error_score(&self, error: f32) -> f32 {
+        let part = self.edge_partition.expect("edge partition present");
+        let esf = self.model.error_scaling_factor;
+        let ei = ((error * esf as f32).round() as i32).clamp(-esf, esf) + esf;
+        let ed = &self.model.error_dist[part];
+        (ed.signal[ei as usize] as f64 / ed.noise[ei as usize] as f64).ln() as f32
+    }
+
+    /// `DBScanScorer.getEdgeScoreInt` for one edge (between two nominal node masses).
+    fn edge_score_int(&self, cur: i32, prev: i32, theo_mass: f32, max_nominal: i32) -> i32 {
+        if cur >= max_nominal || prev >= max_nominal || cur < 0 || prev < 0 {
+            return 0;
+        }
+        let cur_mass = self.node_mass(cur);
+        let prev_mass = self.node_mass(prev);
+        let mut index = 0usize;
+        if cur_mass >= 0.0 {
+            index += 1;
+        }
+        if prev_mass >= 0.0 {
+            index += 2;
+        }
+        let mut edge = self.ion_existence_score(index);
+        if index == 3 {
+            edge += self.error_score(cur_mass - prev_mass - theo_mass);
+        }
+        edge.round() as i32
+    }
+
+    /// Full RawScore (node + edge) for a peptide, mirroring `DBScanScorer.getScore`. `nominal_prefix`
+    /// / `accurate_prefix` are the cumulative prefix masses (no leading zero; last = full peptide).
+    /// The trypsin cleavage credit `DBScanner` adds on top is applied by the caller.
+    pub fn raw_score(&self, nominal_prefix: &[i32], accurate_prefix: &[f64], num_mods: i32) -> i32 {
+        if nominal_prefix.len() < 2 {
+            return 0;
+        }
+        // MS-GF+ uses a leading-zero convention with fromIndex=1; mirror it.
+        let mut nominal = Vec::with_capacity(nominal_prefix.len() + 1);
+        nominal.push(0);
+        nominal.extend_from_slice(nominal_prefix);
+        let mut accurate = Vec::with_capacity(accurate_prefix.len() + 1);
+        accurate.push(0.0);
+        accurate.extend_from_slice(accurate_prefix);
+        let (from, to) = (1usize, nominal.len());
+        let pep = nominal[to - 1];
+
+        // node scores (FastScorer): Σ round(prefix[pm] + suffix[pep − pm])
+        let mut score = 0i32;
+        for &pm in &nominal[from..to - 1] {
+            let sm = pep - pm;
+            score += (self.node_score(pm, true) + self.node_score(sm, false)).round() as i32;
+        }
+        score += MODIFIED_EDGE_PENALTY * num_mods;
+
+        // edge scores (DBScanScorer), direction set by the main ion
+        let max_n = pep + 1;
+        if !self.main_ion_is_prefix() {
+            for i in (from..=to - 2).rev() {
+                let theo = (accurate[i + 1] - accurate[i]) as f32;
+                score += self.edge_score_int(pep - nominal[i], pep - nominal[i + 1], theo, max_n);
+            }
+        } else {
+            for i in from..=to - 2 {
+                let theo = (accurate[i] - accurate[i - 1]) as f32;
+                score += self.edge_score_int(nominal[i], nominal[i - 1], theo, max_n);
+            }
+        }
+        score
     }
 }
 
