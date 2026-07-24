@@ -314,13 +314,18 @@ fn prepare<'m>(
         prob_cleavage_sites: prob_cleavage,
     };
     // GeneratingFunctionGroup: one graph per candidate peptide mass (isotope range), then merged.
-    let gfs: Vec<GenFunc> = sinks
-        .iter()
-        .filter_map(|&p| {
-            let (nodes, sink_idx) = build_reverse_graph(&scored, p, &[p], aa, 2, -11);
-            compute(&nodes, &sink_idx, Some(cleave))
-        })
-        .collect();
+    // Tables and edges are candidate-independent, so build them once for the largest candidate and
+    // only recompute node scores per candidate.
+    let max_p = *sinks.iter().max().unwrap(); // sinks is non-empty (checked above)
+    let tables = scored.tables(max_p);
+    let (mut graph, _) = build_reverse_graph(&scored, &tables, max_p, &[max_p], aa, 2, -11);
+    let mut gfs: Vec<GenFunc> = Vec::new();
+    for &p in &sinks {
+        graph.recompute_node_scores(&tables, p, &[p]);
+        if let Some(gf) = compute(&graph, &[p as usize], Some(cleave)) {
+            gfs.push(gf);
+        }
+    }
     let gf = merge_group(&gfs)?;
     Some(Prepared { scored, gf })
 }

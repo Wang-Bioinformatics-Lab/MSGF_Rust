@@ -134,14 +134,19 @@ fn generating_function_matches_golden() {
             penalty: -11,
             prob_cleavage_sites: prob_cleavage,
         };
-        // GeneratingFunctionGroup: one graph per candidate peptide mass (its own complement), merged
-        let gfs: Vec<_> = sinks
-            .iter()
-            .filter_map(|&p| {
-                let (nodes, sink_idx) = build_reverse_graph(&scored, p, &[p], &aa, 2, -11);
-                compute(&nodes, &sink_idx, Some(cleave))
-            })
-            .collect();
+        // GeneratingFunctionGroup: one graph per candidate peptide mass (its own complement), merged.
+        // Tables AND edges are candidate-independent, so build both once for the largest candidate
+        // and only recompute node scores per candidate — the shared path used in production.
+        let max_p = sinks.iter().copied().max().unwrap_or(0);
+        let tables = scored.tables(max_p);
+        let (mut graph, _) = build_reverse_graph(&scored, &tables, max_p, &[max_p], &aa, 2, -11);
+        let mut gfs = Vec::new();
+        for &p in &sinks {
+            graph.recompute_node_scores(&tables, p, &[p]);
+            if let Some(gf) = compute(&graph, &[p as usize], Some(cleave)) {
+                gfs.push(gf);
+            }
+        }
         let Some(gf) = merge_group(&gfs) else {
             continue;
         };
