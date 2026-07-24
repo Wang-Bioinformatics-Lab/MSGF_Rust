@@ -112,41 +112,35 @@ pub fn build_reverse_graph(
     let total = acc as usize;
 
     // Pass 2: fill edges in amino-acid order (the DP's summation order — preserved for bit-exact
-    // reproduction). Edges INTO a sink carry errorScore 0 (setBackwardEdgesFromSink), not
-    // getEdgeScore, and no peptide cleavage; only intermediate edges call edge_score.
+    // reproduction). Edge scores are **candidate-independent** — they depend only on the shared
+    // node masses and the amino acid, never on `complement_mass` or which node is the sink — so the
+    // edge arrays are built once and reused across the isotope-error candidates (see
+    // [`Graph::recompute_node_scores`]). The sink's edges (errorScore 0, `setBackwardEdgesFromSink`)
+    // are zeroed in the DP instead of here, since the sink differs per candidate.
     //
     // Node masses come from the shared `tables` (one peak lookup per node per spectrum, not one per
-    // incident edge per graph). `m, prev` are always in `0..max_n`, so the `edge_score` bounds guard
+    // incident edge per graph). `m, prev` are always in-range, so the `edge_score` bounds guard
     // never fires; `edge_score_with` on the resolved masses is equivalent.
     let node_mass = &tables.node_mass;
     let mut edge_prev = vec![0u32; total];
     let mut edge_score = vec![0i32; total];
     let mut edge_prob = vec![0f64; total];
     for m in 1..=graph_max {
-        let sink_m = is_sink(m);
         let mut pos = edge_start[m as usize] as usize;
         for a in aa {
             let prev = m - a.nominal;
             if prev < 0 {
                 continue;
             }
-            let es = if sink_m {
-                0
-            } else {
-                let mut e = scored.edge_score_with(
-                    node_mass[m as usize],
-                    node_mass[prev as usize],
-                    a.accurate_mass,
-                );
-                if prev == 0 {
-                    e += if a.residue == b'K' || a.residue == b'R' {
-                        peptide_credit
-                    } else {
-                        peptide_penalty
-                    };
-                }
-                e
-            };
+            let mut es =
+                scored.edge_score_with(node_mass[m as usize], node_mass[prev as usize], a.accurate_mass);
+            if prev == 0 {
+                es += if a.residue == b'K' || a.residue == b'R' {
+                    peptide_credit
+                } else {
+                    peptide_penalty
+                };
+            }
             edge_prev[pos] = prev as u32;
             edge_score[pos] = es;
             edge_prob[pos] = a.prob;
@@ -162,6 +156,39 @@ pub fn build_reverse_graph(
         edge_prob,
     };
     (graph, sinks.iter().map(|&s| s as usize).collect())
+}
+
+impl Graph {
+    /// Recompute the node scores for a different candidate peptide mass (`complement_mass` / `sinks`)
+    /// **without rebuilding the edges** — the edges are candidate-independent (see
+    /// [`build_reverse_graph`]). This is how one built graph serves every isotope-error candidate:
+    /// build once for the largest candidate, then call this per candidate before the DP. Node scores
+    /// for masses above the candidate are zeroed; the DP only visits nodes up to the candidate's sink.
+    pub fn recompute_node_scores(
+        &mut self,
+        tables: &SpectrumTables,
+        complement_mass: i32,
+        sinks: &[i32],
+    ) {
+        let graph_max = sinks
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(complement_mass)
+            .max(complement_mass);
+        let is_sink = |m: i32| sinks.contains(&m);
+        for s in self.node_score.iter_mut() {
+            *s = 0;
+        }
+        for m in 1..graph_max {
+            if is_sink(m) || m >= complement_mass {
+                continue;
+            }
+            self.node_score[m as usize] = msgf_chem::round_half_up(
+                tables.prefix[(complement_mass - m) as usize] + tables.suffix[m as usize],
+            );
+        }
+    }
 }
 
 #[cfg(test)]

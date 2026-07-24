@@ -90,13 +90,15 @@ fn spec_evalue(
     let peaks = preprocess(model, s.charge, s.parent_mass, &s.raw);
     let scored = ScoredSpectrum::from_ranked_peaks(model, s.charge, s.parent_mass, peaks);
     let tables = scored.tables(s.pep_nominal);
-    let gfs: Vec<_> = (s.pep_nominal - 1..=s.pep_nominal)
-        .filter(|&p| p > 0)
-        .filter_map(|p| {
-            let (g, sinks) = build_reverse_graph(&scored, &tables, p, &[p], aa, 2, -11);
-            compute_into(scratch, &g, &sinks, Some(cleave))
-        })
-        .collect();
+    // Build tables + edges once for the largest candidate; each candidate only recomputes node scores.
+    let (mut g, _) = build_reverse_graph(&scored, &tables, s.pep_nominal, &[s.pep_nominal], aa, 2, -11);
+    let mut gfs = Vec::new();
+    for p in (s.pep_nominal - 1..=s.pep_nominal).filter(|&p| p > 0) {
+        g.recompute_node_scores(&tables, p, &[p]);
+        if let Some(gf) = compute_into(scratch, &g, &[p as usize], Some(cleave)) {
+            gfs.push(gf);
+        }
+    }
     black_box(merge_group(&gfs).map(|g| g.spectral_probability(30)));
 }
 

@@ -166,13 +166,16 @@ fn pass(
         let scored = timed!(1, scored, {
             ScoredSpectrum::from_ranked_peaks(model, s.charge, s.parent_mass, peaks)
         });
-        // Shared per-spectrum tables, built once for the largest candidate mass and reused by both
-        // isotope-error graphs.
+        // Shared per-spectrum tables, built once for the largest candidate mass.
         let tables = timed!(2, tables, { scored.tables(s.pep_nominal) });
+        // Build the edge structure ONCE (largest candidate); candidates only recompute node scores.
+        let (mut g, _) = timed!(3, graph, {
+            build_reverse_graph(&scored, &tables, s.pep_nominal, &[s.pep_nominal], aa, 2, -11)
+        });
         let mut gfs = Vec::new();
         for p in (s.pep_nominal - 1..=s.pep_nominal).filter(|&p| p > 0) {
-            let (g, sinks) =
-                timed!(3, graph, { build_reverse_graph(&scored, &tables, p, &[p], aa, 2, -11) });
+            timed!(3, graph, { g.recompute_node_scores(&tables, p, &[p]) });
+            let sinks = [p as usize];
             st.nodes += g.n_nodes() as u64;
             st.edges += g.n_edges() as u64;
             st.graphs += 1;

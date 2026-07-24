@@ -310,10 +310,19 @@ pub fn compute_into(
     sinks: &[usize],
     cleavage: Option<Cleavage>,
 ) -> Option<GenFunc> {
-    let n = graph.n_nodes();
-    if n == 0 {
+    let n_full = graph.n_nodes();
+    if n_full == 0 {
         return None;
     }
+    // Only visit nodes up to this candidate's largest sink. A graph built for the largest
+    // isotope-error candidate serves the smaller ones by processing a prefix of it.
+    let n = sinks
+        .iter()
+        .copied()
+        .max()
+        .map(|s| s + 1)
+        .unwrap_or(n_full)
+        .min(n_full);
     let kernel = select_axpy(); // chosen once; the per-edge convolution below dominates the DP
     sc.arena.clear();
     sc.dists.clear();
@@ -333,6 +342,9 @@ pub fn compute_into(
             graph.edge_start[i] as usize,
             graph.edge_start[i + 1] as usize,
         );
+        // The sink's incoming edges carry errorScore 0 (setBackwardEdgesFromSink). The sink differs
+        // per candidate, so it is zeroed here rather than baked into the (shared) edge array.
+        let is_sink = sinks.contains(&i);
 
         // Score range of this node's distribution, from its reachable predecessors.
         let (mut cur_min, mut cur_max) = (i32::MAX, i32::MIN);
@@ -341,7 +353,7 @@ pub fn compute_into(
             if pd.len == 0 {
                 continue;
             }
-            let combined = node_score + graph.edge_score[e];
+            let combined = node_score + if is_sink { 0 } else { graph.edge_score[e] };
             cur_min = cur_min.min(pd.min_score + combined);
             cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
         }
@@ -364,7 +376,7 @@ pub fn compute_into(
                     continue;
                 }
                 let src = &prev_part[pd.start as usize..pd.start as usize + pd.len as usize];
-                let score_diff = node_score + graph.edge_score[e];
+                let score_diff = node_score + if is_sink { 0 } else { graph.edge_score[e] };
                 axpy_with(
                     kernel,
                     cur,
@@ -439,17 +451,32 @@ mod tests {
 
     #[test]
     fn tiny_generating_function() {
-        // source(0) --aa(0.5), edgeScore 1--> node1(nodeScore 2) --aa(0.5), edgeScore 3--> sink2(nodeScore 0)
+        // source(0) --aa(0.5),es1--> node1(ns2) --aa(0.5),es3--> node2(ns0) --aa(1.0),es0--> sink3(ns0)
+        // The sink's incoming edge is scored 0 (setBackwardEdgesFromSink), which compute enforces, so
+        // the two scored interior edges determine the path.
         let g = Graph::from_adj(&[
             (0, vec![]),            // source
             (2, vec![(0, 1, 0.5)]), // node1
-            (0, vec![(1, 3, 0.5)]), // sink2
+            (0, vec![(1, 3, 0.5)]), // node2
+            (0, vec![(2, 0, 1.0)]), // sink3
         ]);
-        let gf = compute(&g, &[2], None).unwrap();
-        // path score = (2+1) + (0+3) = 6 with prob 0.5*0.5 = 0.25
+        let gf = compute(&g, &[3], None).unwrap();
+        // path score = (2+1) + (0+3) + (0+0) = 6 with prob 0.5*0.5*1.0 = 0.25
         approx(gf.spectral_probability(6), 0.25);
         approx(gf.spectral_probability(7), 0.0);
         assert_eq!(gf.max_score(), 6); // max achievable score
+    }
+
+    #[test]
+    fn compute_zeros_sink_edge_scores() {
+        // A scored edge into the sink is ignored (its score is forced to 0), matching MS-GF+.
+        let g = Graph::from_adj(&[
+            (0, vec![]),            // source
+            (0, vec![(0, 5, 1.0)]), // sink1 — edge score 5 must NOT count
+        ]);
+        let gf = compute(&g, &[1], None).unwrap();
+        approx(gf.spectral_probability(0), 1.0); // score 0, not 5
+        assert_eq!(gf.max_score(), 0);
     }
 
     #[test]
