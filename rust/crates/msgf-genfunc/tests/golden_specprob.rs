@@ -182,13 +182,19 @@ fn generating_function_matches_golden() {
             f64::NAN
         };
         denovo_ok += (my_denovo == g_denovo) as i32;
-        spec_ok += (dlog.abs() <= 0.02) as i32;
-        if (my_denovo != g_denovo || dlog.abs() > 0.02) && worst.len() < 900 {
+        // SpecEValue matches to f64 accumulation noise (distributions agree to ~2e-8)
+        spec_ok += (dlog.abs() <= 1e-4) as i32;
+        if (my_denovo != g_denovo || dlog.abs() > 1e-4) && worst.len() < 900 {
             worst.push_str(&format!(
                 "\n  scan {scan}: denovo {my_denovo} vs {g_denovo} | spec {my_spec:.4e} vs {g_spec:.4e} (Δlog {dlog:.3})"
             ));
         }
     }
-    eprintln!("DeNovoScore exact: {denovo_ok}/{total}; SpecEValue exact(<=0.02 log): {spec_ok}/{total}{worst}");
-    assert!(total >= 25);
+    eprintln!("DeNovoScore exact: {denovo_ok}/{total}; SpecEValue exact: {spec_ok}/{total}{worst}");
+    assert!(total >= 25, "expected ~30 matched spectra");
+    assert_eq!(denovo_ok, total, "DeNovoScore must match MS-GF+ exactly");
+    assert_eq!(
+        spec_ok, total,
+        "SpecEValue (p-value) must match MS-GF+ exactly"
+    );
 }

@@ -84,19 +84,27 @@ pub fn build_reverse_graph(
         );
     }
     for m in 1..=graph_max {
+        // Edges INTO the sink carry errorScore 0 (setBackwardEdgesFromSink), not getEdgeScore —
+        // and no peptide cleavage; only intermediate edges call edge_score.
+        let is_sink = sink_set.contains(&m);
         for a in aa {
             let prev = m - a.nominal;
             if prev < 0 {
                 continue;
             }
-            let mut es = scored.edge_score(m, prev, a.accurate_mass, max_n);
-            if prev == 0 {
-                es += if a.residue == b'K' || a.residue == b'R' {
-                    peptide_credit
-                } else {
-                    peptide_penalty
-                };
-            }
+            let es = if is_sink {
+                0
+            } else {
+                let mut e = scored.edge_score(m, prev, a.accurate_mass, max_n);
+                if prev == 0 {
+                    e += if a.residue == b'K' || a.residue == b'R' {
+                        peptide_credit
+                    } else {
+                        peptide_penalty
+                    };
+                }
+                e
+            };
             nodes[m as usize].edges.push(Edge {
                 prev: prev as usize,
                 edge_score: es,
