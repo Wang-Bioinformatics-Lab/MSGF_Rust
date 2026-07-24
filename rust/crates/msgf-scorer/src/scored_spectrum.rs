@@ -213,7 +213,11 @@ impl<'a> ScoredSpectrum<'a> {
         let lo = mz - tol_da;
         let hi = mz + tol_da;
         let b = lo.max(0.0).floor() as usize;
-        let mut start = self.peak_bucket.get(b).copied().unwrap_or(self.peaks.len() as u32) as usize;
+        let mut start = self
+            .peak_bucket
+            .get(b)
+            .copied()
+            .unwrap_or(self.peaks.len() as u32) as usize;
         // The bucket gives the first peak with `mz >= b` (b ≤ lo); step to the first `mz >= lo`.
         while start < self.peaks.len() && self.peaks[start].mz < lo {
             start += 1;
@@ -321,7 +325,9 @@ impl<'a> ScoredSpectrum<'a> {
     /// incident edge (~19 amino acids). Depends only on the spectrum — not on the candidate
     /// peptide mass — so the table is identical across the isotope-error candidate graphs.
     pub fn node_masses(&self, max_nominal: i32) -> Vec<f32> {
-        (0..=max_nominal.max(0)).map(|k| self.node_mass(k)).collect()
+        (0..=max_nominal.max(0))
+            .map(|k| self.node_mass(k))
+            .collect()
     }
 
     /// Precompute every per-node quantity the graph builder needs, for all nominal masses

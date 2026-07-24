@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use msgf_chem::{mass, scaling};
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa};
+use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
 use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch};
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -94,7 +94,11 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
                 charge,
                 parent_mass,
                 pep_nominal,
-                raw: s.peaks.iter().map(|p| (p.mz as f32, p.intensity as f32)).collect(),
+                raw: s
+                    .peaks
+                    .iter()
+                    .map(|p| (p.mz as f32, p.intensity as f32))
+                    .collect(),
             })
         })
         .collect();
@@ -135,7 +139,11 @@ struct Stats {
 
 const NSTAGE: usize = 7;
 
-const CLEAVE: Cleavage = Cleavage { credit: 2, penalty: -11, prob_cleavage_sites: 0.10 };
+const CLEAVE: Cleavage = Cleavage {
+    credit: 2,
+    penalty: -11,
+    prob_cleavage_sites: 0.10,
+};
 
 /// One full pass over all spectra with per-stage timers. `census` accumulates alloc counts.
 fn pass(
@@ -162,7 +170,9 @@ fn pass(
     }
 
     for s in spectra {
-        let peaks = timed!(0, pre, { preprocess(model, s.charge, s.parent_mass, &s.raw) });
+        let peaks = timed!(0, pre, {
+            preprocess(model, s.charge, s.parent_mass, &s.raw)
+        });
         let scored = timed!(1, scored, {
             ScoredSpectrum::from_ranked_peaks(model, s.charge, s.parent_mass, peaks)
         });
@@ -170,7 +180,14 @@ fn pass(
         let tables = timed!(2, tables, { scored.tables(s.pep_nominal) });
         // Build the edge structure ONCE (largest candidate); candidates only recompute node scores.
         let (mut g, _) = timed!(3, graph, {
-            build_reverse_graph(&scored, &tables, s.pep_nominal, &[s.pep_nominal], aa, 2, -11)
+            build_reverse_graph(
+                &scored,
+                &tables,
+                s.pep_nominal,
+                &[s.pep_nominal],
+                aa,
+                PeptideCleavage::TRYPSIN,
+            )
         });
         let mut gfs = Vec::new();
         for p in (s.pep_nominal - 1..=s.pep_nominal).filter(|&p| p > 0) {
@@ -179,7 +196,9 @@ fn pass(
             st.nodes += g.n_nodes() as u64;
             st.edges += g.n_edges() as u64;
             st.graphs += 1;
-            let gf = timed!(4, compute, { compute_into(&mut scratch, &g, &sinks, Some(CLEAVE)) });
+            let gf = timed!(4, compute, {
+                compute_into(&mut scratch, &g, &sinks, Some(CLEAVE))
+            });
             st.arena_cells += scratch.arena_len() as u64;
             st.reachable += scratch.reachable() as u64;
             if let Some(gf) = gf {
@@ -198,7 +217,9 @@ fn pass(
 }
 
 fn main() {
-    let Some((model, spectra, aa)) = load() else { return };
+    let Some((model, spectra, aa)) = load() else {
+        return;
+    };
     let n = spectra.len();
 
     // "hot" mode: just hammer the single-thread throughput loop for `perf stat`.
@@ -253,7 +274,11 @@ fn main() {
     let total: Duration = times.iter().sum();
 
     println!("\n=== SpecEValue profile — {n} F13 spectra, single-thread, nominal grid ===");
-    println!("graphs built: {}  ({:.2} per spectrum)", st.graphs, st.graphs as f64 / n as f64);
+    println!(
+        "graphs built: {}  ({:.2} per spectrum)",
+        st.graphs,
+        st.graphs as f64 / n as f64
+    );
     println!(
         "graph size:   {:.0} nodes, {:.0} edges per graph",
         st.nodes as f64 / st.graphs as f64,

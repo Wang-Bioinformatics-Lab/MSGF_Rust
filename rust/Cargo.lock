@@ -311,6 +311,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "msgf"
+version = "0.1.0"
+dependencies = [
+ "msgf-chem",
+ "msgf-db",
+ "msgf-fdr",
+ "msgf-genfunc",
+ "msgf-io",
+ "msgf-scorer",
+ "msgf-search",
+ "serde_json",
+]
+
+[[package]]
 name = "msgf-chem"
 version = "0.1.0"
 dependencies = [
@@ -322,9 +336,28 @@ name = "msgf-cli"
 version = "0.1.0"
 dependencies = [
  "msgf-chem",
+ "msgf-db",
+ "msgf-fdr",
  "msgf-genfunc",
  "msgf-io",
  "msgf-scorer",
+ "msgf-search",
+ "rayon",
+ "serde_json",
+]
+
+[[package]]
+name = "msgf-db"
+version = "0.1.0"
+dependencies = [
+ "msgf-chem",
+ "serde_json",
+]
+
+[[package]]
+name = "msgf-fdr"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 
@@ -355,6 +388,20 @@ dependencies = [
  "criterion",
  "msgf-chem",
  "msgf-io",
+ "serde_json",
+]
+
+[[package]]
+name = "msgf-search"
+version = "0.1.0"
+dependencies = [
+ "msgf-chem",
+ "msgf-db",
+ "msgf-fdr",
+ "msgf-genfunc",
+ "msgf-io",
+ "msgf-scorer",
+ "rayon",
  "serde_json",
 ]
 

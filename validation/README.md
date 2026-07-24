@@ -23,11 +23,13 @@ validation/
 │   ├── make_spectra_golden.py     # per-spectrum parse facts + peak hashes (no Java)
 │   ├── make_param_inventory.py    # .param size/sha256/identity header (no Java)
 │   ├── generate_golden.sh    # JVM-only: run MS-GF+ -> mzid -> tsv -> frozen golden json
+│   ├── make_fdr_golden.sh    # JVM-only: TargetDecoyAnalysis q-value maps (needs only the jar)
 │   ├── parse_msgf_tsv.py     # MS-GF+ tsv -> normalized golden json (with compare tolerances)
 │   └── MSGFPlus.jar          # (gitignored) via fetch_reference_data.sh --jar
 ├── golden/                   # frozen reference outputs (COMMITTED)
 │   ├── iprg2013_F13.golden.json   # authoritative MS-GF+ high-res search, 4,133 PSMs
 │   ├── worked_example.golden.json # 2 MS-GF+-authored PSMs (no Java needed)
+│   ├── fdr/fdrmap_cases.golden.json    # MS-GF+ target-decoy q-value maps (generated locally, gitignored)
 │   ├── chemistry/  spectra/  models/   # the no-Java fixture families
 ├── regression/
 │   ├── run_regression.py     # re-derives every golden from raw data; runs now (no Java/Rust)
@@ -35,7 +37,7 @@ validation/
 └── diff_harness/             # run Java+Rust on the same inputs, report drift (later phase)
 ```
 
-**Regression suite:** `python3 regression/run_regression.py` → currently **1,720 checks, 0 fail**.
+**Regression suite:** `python3 regression/run_regression.py` → currently **1,762 checks, 0 fail**.
 See `regression/README.md` for the full corpus and per-family compare semantics.
 
 ## Quick start

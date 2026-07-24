@@ -1,0 +1,29 @@
+[package]
+name = "msgf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MSGF_Rust — MS-GF+ significance scoring and database search as one library (facade over the msgf-* crates)"
+
+[lib]
+name = "msgf"
+path = "src/lib.rs"
+
+[dependencies]
+msgf-chem = { version = "0.1.0", path = "../msgf-chem" }
+msgf-io = { version = "0.1.0", path = "../msgf-io" }
+msgf-scorer = { version = "0.1.0", path = "../msgf-scorer" }
+msgf-genfunc = { version = "0.1.0", path = "../msgf-genfunc" }
+msgf-db = { version = "0.1.0", path = "../msgf-db", optional = true }
+msgf-fdr = { version = "0.1.0", path = "../msgf-fdr", optional = true }
+msgf-search = { version = "0.1.0", path = "../msgf-search", optional = true }
+
+[features]
+# The scoring path (chem + io + scorer + genfunc) is always present; the search engine pulls in
+# rayon and the database layer, so it can be switched off by a consumer that only rescores.
+default = ["search"]
+search = ["dep:msgf-db", "dep:msgf-fdr", "dep:msgf-search"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

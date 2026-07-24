@@ -135,7 +135,14 @@ impl ScoreDist {
     /// `score_diff` and scaled by `aa_prob`, into this distribution.
     #[inline]
     fn add_slice(&mut self, src_min: i32, src: &[f64], score_diff: i32, aa_prob: f64) {
-        axpy(&mut self.probs, self.min_score, src, src_min, score_diff, aa_prob);
+        axpy(
+            &mut self.probs,
+            self.min_score,
+            src,
+            src_min,
+            score_diff,
+            aa_prob,
+        );
     }
 
     /// Add `other`, shifted by `score_diff` and scaled by `aa_prob`, into this distribution.
