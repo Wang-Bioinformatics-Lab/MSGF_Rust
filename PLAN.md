@@ -92,6 +92,14 @@ the Rust MS ecosystem) rather than porting the Java `mzml` package. Recommend re
 **D4 — High-res priority order.** Start with **HCD on Q-Exactive/Orbitrap, tryptic** (the most
 common high-res case), then CID/ETD high-res, then labeled (TMT/iTRAQ). Confirm.
 
+**D5 — Own-model / retraining path (the license unlock).** The trained `.param` fragment-scoring
+model is the *only* UC-encumbered piece on the scoring path; replacing it with one we train from
+**MassIVE-KB (CC0)** is what lets MSGF_Rust go MIT. Adopt the clean-room target: add a
+`ScoringModel` seam behind `node_score()` now, build an `msgf-train` crate, ship a CC0-trained
+`HCD_HighRes_Tryp` first, and keep the UC `.param` path as a permanent test-only oracle. **Full plan
+in [`docs/models.md`](docs/models.md).** *Recommendation: yes — the concrete execution of D1's "A
+now, B later."*
+
 ---
 
 ## 4. How MSGF scoring works (the load-bearing core)
@@ -264,3 +272,22 @@ per-spectrum generating function; target-decoy FDR; mzIdentML/TSV output; parall
 On sign-off of §3, execute **Phase 0**: scaffold `rust/` + `validation/`, fetch the reference
 jar, curate a minimal high-res spectrum set, and capture the first frozen golden outputs — so
 every subsequent phase is measured against a real oracle from day one.
+
+---
+
+## 10. The implicit scoring models (and how we replace them)
+
+MS-GF+ scoring rests on **two trained/implicit models**, not just the algorithm — and one of them
+is the sole reason MSGF_Rust currently inherits UC's non-commercial license:
+
+1. **Fragment-scoring model** — the `.param` files (`msgf-scorer::ScoringModel`). Trained by MS-GF+
+   from confident PSMs; **UC Regents, non-commercial.** This is the release blocker.
+2. **Amino-acid background-frequency model** — the null P(amino acid) the generating function
+   integrates over (`msgf-genfunc`: `AA_PROB = 0.05`, or DB-composition). **Already ours.**
+
+Our loader is **read-only** — there is no trainer or `.param` writer today. The plan to make our own
+model — what "training" concretely is (a counting pass), **MassIVE-KB (CC0)** as the corpus, the
+`msgf-train` crate, the `ScoringModel` swap seam, validation by trainer-mechanics oracle +
+ID-count parity, and the milestones to an MIT release — is the dedicated design doc:
+
+**→ [`docs/models.md`](docs/models.md)** (decision **D5**).
