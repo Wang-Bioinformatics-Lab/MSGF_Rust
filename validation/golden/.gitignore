@@ -1,0 +1,13 @@
+# Goldens derived from MS-GF+ (UC Regents, non-commercial license) or from its UC-licensed test
+# data are **not committed** — see README.md in this directory and ../../LICENSING.md.
+# Regenerate them locally with ../reference/build_all_golden.sh after fetch_reference_data.sh.
+iprg2013_F13.*
+worked_example.golden.json
+models/*.model.golden.json
+models/node_scores.golden.json
+rawscore/
+spectra/
+
+# NOTE: golden families still under active development (fdr/, search/) are deliberately NOT listed
+# here — silently ignoring another workstream's files would hide them at commit time. If those
+# goldens are derived from MS-GF+ output, add them here when that work lands.

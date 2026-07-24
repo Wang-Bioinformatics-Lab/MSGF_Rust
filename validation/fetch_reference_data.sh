@@ -12,6 +12,8 @@
 #   ./fetch_reference_data.sh --full     # also fetch large FASTAs (iPRG human ~50 MB, ecoli ~2 MB)
 #   ./fetch_reference_data.sh --jar      # also fetch + unzip the MS-GF+ release jar (~25 MB, needs Java to run)
 #   ./fetch_reference_data.sh --all      # small + full + jar
+#   ./fetch_reference_data.sh --training [N]  # also fetch N MassIVE-KB library MGFs (~48 MB each,
+#                                             # default 5) into data/training/ — the msgf-train corpus
 #   ./fetch_reference_data.sh --force    # re-download even if the file already exists
 #
 set -euo pipefail
@@ -23,15 +25,19 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA="${HERE}/data"
 REFDIR="${HERE}/reference"
 
-WANT_FULL=0; WANT_JAR=0; FORCE=0
+WANT_FULL=0; WANT_JAR=0; FORCE=0; WANT_TRAINING=0; TRAINING_N=5
+prev=""
 for arg in "$@"; do
+  if [[ "$prev" == "--training" && "$arg" =~ ^[0-9]+$ ]]; then TRAINING_N="$arg"; prev=""; continue; fi
   case "$arg" in
     --full) WANT_FULL=1 ;;
     --jar)  WANT_JAR=1 ;;
     --all)  WANT_FULL=1; WANT_JAR=1 ;;
+    --training) WANT_TRAINING=1 ;;
     --force) FORCE=1 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
+  prev="$arg"
 done
 
 # dest_relative_to_data :: upstream_repo_path
@@ -120,7 +126,35 @@ if [[ "$WANT_JAR" -eq 1 ]]; then
   fi
 fi
 
+# ---------------------------------------------------------------------------------------------
+# Training corpus — MassIVE-KB peptide spectral libraries (MassIVE MSV000081142).
+#
+# DIFFERENT PROVENANCE AND LICENSE from everything above: MassIVE-KB is CC0, not UC-licensed.
+# That is the whole point — a model trained only on these bytes carries no upstream restriction
+# (see docs/models.md D5). Each file is an annotated MGF (peptide in `SEQ=`), ~48 MB / ~14k
+# spectra, and is the input `msgf-train` counts a `.param` from.
+if [[ "$WANT_TRAINING" -eq 1 ]]; then
+  echo "==> MassIVE-KB training corpus (CC0) -> data/training/  [${TRAINING_N} files]"
+  mkdir -p "${DATA}/training"
+  PROXY="https://massiveproxy.gnps2.org/massiveproxy/MSV000081142/peak/filtered_library_mgf_files"
+  # The first N library shards, by name, so a run is reproducible.
+  NAMES=$(curl -fsSL --get "https://datasetcache.gnps2.org/datasette/database.json" \
+    --data-urlencode "sql=select filepath from filename where dataset='MSV000081142' and filepath like '%filtered_library_mgf_files%' order by filepath limit ${TRAINING_N}" \
+    --data-urlencode "_shape=array" \
+    | python3 -c 'import json,sys,os; print("\n".join(os.path.basename(r["filepath"]) for r in json.load(sys.stdin)))')
+  for name in $NAMES; do
+    dest="${DATA}/training/${name}"
+    if [[ -s "$dest" && "$FORCE" -eq 0 ]]; then
+      echo "  skip (exists): training/${name}"
+    else
+      echo "  fetch: training/${name}"
+      curl -fsSL "${PROXY}/${name}" -o "$dest"
+    fi
+  done
+  echo "  corpus: $(ls -1 "${DATA}/training" | wc -l) files, $(du -sh "${DATA}/training" | cut -f1)"
+fi
+
 echo "==> writing MANIFEST.sha256"
-( cd "$DATA" && find . -type f ! -name 'MANIFEST.sha256' -print0 | sort -z \
+( cd "$DATA" && find . -type f ! -name 'MANIFEST.sha256' ! -path './training/*' -print0 | sort -z \
   | xargs -0 sha256sum > MANIFEST.sha256 )
 echo "done. $(wc -l < "${DATA}/MANIFEST.sha256") files in data/ (see data/MANIFEST.sha256)"

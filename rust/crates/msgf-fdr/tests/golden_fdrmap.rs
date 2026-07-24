@@ -2,9 +2,8 @@
 //!
 //! The oracle is `validation/golden/fdr/fdrmap_cases.golden.json`, dumped by
 //! `validation/reference/java/DumpFdrMap.java` (regenerate with
-//! `validation/reference/make_fdr_golden.sh`, which needs only the jar and a JVM — no spectra,
-//! models or database). The golden is **derived from MS-GF+ and therefore gitignored**, so this
-//! test skips until you generate it.
+//! `validation/reference/make_fdr_golden.sh`, which needs only the jar and a JVM). It is
+//! **committed**, so this runs on a fresh clone with no fetched data.
 //!
 //! Gate 1 (`golden_fdr.rs`) pins the F13 search columns but only ever sees two distinct q-values
 //! (`PLAN2.md` §4). These 14 synthetic cases are built to separate the rules it cannot see: how a

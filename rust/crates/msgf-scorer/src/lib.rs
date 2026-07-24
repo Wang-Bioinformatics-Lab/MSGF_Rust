@@ -11,6 +11,8 @@
 //!
 //! Per-node spectrum scoring (RawScore) is built on top of this model next.
 
+#[cfg(feature = "bundled-model")]
+pub mod bundled;
 pub mod preprocess;
 pub mod scored_spectrum;
 pub mod write;

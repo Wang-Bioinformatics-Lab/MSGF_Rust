@@ -6,6 +6,12 @@ license.workspace = true
 authors.workspace = true
 description = "MS-GF+ scoring model (.param) reader and (later) per-node spectrum scoring for MSGF_Rust"
 
+[features]
+default = ["bundled-model"]
+# Embed the MIT/CC0-clean default scoring model (~1 MB, see models/README.md). Turn off to build
+# a scorer that only ever loads a model from disk.
+bundled-model = []
+
 [dependencies]
 msgf-chem = { path = "../msgf-chem" }
 

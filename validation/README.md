@@ -26,11 +26,13 @@ validation/
 │   ├── make_fdr_golden.sh    # JVM-only: TargetDecoyAnalysis q-value maps (needs only the jar)
 │   ├── parse_msgf_tsv.py     # MS-GF+ tsv -> normalized golden json (with compare tolerances)
 │   └── MSGFPlus.jar          # (gitignored) via fetch_reference_data.sh --jar
-├── golden/                   # frozen reference outputs (COMMITTED)
-│   ├── iprg2013_F13.golden.json   # authoritative MS-GF+ high-res search, 4,133 PSMs
-│   ├── worked_example.golden.json # 2 MS-GF+-authored PSMs (no Java needed)
-│   ├── fdr/fdrmap_cases.golden.json    # MS-GF+ target-decoy q-value maps (generated locally, gitignored)
-│   ├── chemistry/  spectra/  models/   # the no-Java fixture families
+├── golden/                   # frozen reference outputs — golden/README.md says what is
+│   │                         # committed (chemistry/, param_inventory) vs generated locally
+│   ├── iprg2013_F13.golden.json   # authoritative MS-GF+ high-res search, 4,133 PSMs [generated]
+│   ├── worked_example.golden.json # 2 MS-GF+-authored PSMs (no Java needed)         [generated]
+│   ├── fdr/fdrmap_cases.golden.json    # MS-GF+ target-decoy q-value maps, 14 cases  [generated]
+│   ├── chemistry/                      # physics-based, ours                        [COMMITTED]
+│   ├── spectra/  models/               # UC-derived fixtures                        [generated]
 ├── regression/
 │   ├── run_regression.py     # re-derives every golden from raw data; runs now (no Java/Rust)
 │   └── README.md             # the corpus + compare semantics + how Rust plugs in
@@ -76,6 +78,13 @@ requires a UCSD Technology Transfer agreement**. It is *not* an OSI/permissive l
 Consequences, enforced by `.gitignore`:
 - These bytes are **not committed** to this repo — the script re-fetches them on demand.
 - The `.param` scoring models are likewise not vendored.
-- Golden JSON we *derive* by running MS-GF+ is committed (it's our test oracle), but note it is
-  derived from UC-licensed software; keep this in mind if/when MSGF_Rust is released under a
-  permissive license (that path requires independently trained models — see PLAN.md D1).
+- **Golden JSON derived by running MS-GF+ (or embedding its test data) is no longer committed
+  either** — it is regenerated locally by `reference/build_all_golden.sh`. Only the families that
+  owe nothing to UC (`golden/chemistry/`, `golden/models/param_inventory.golden.json`) stay in git.
+  See `golden/README.md` and `../LICENSING.md` for the split and the 2026-07-24 cleanup.
+- Golden-backed tests therefore **skip** on a checkout that has not fetched/generated them;
+  `cargo test` still passes, it just validates less.
+
+The corpus this project *trains* on is a separate matter: `data/training/` holds MassIVE-KB
+peptide libraries (`fetch_reference_data.sh --training`), which are **CC0**, not UC-licensed —
+that is what makes the shipped model, and the repository, MIT.

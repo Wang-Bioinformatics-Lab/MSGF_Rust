@@ -85,7 +85,7 @@ existing format, which the reader/scorer/generating-function already accept unch
 `author_a_model_from_scratch` already assembles a `ScoringModel` from plain numbers and round-trips
 it. That's the mechanism a trainer plugs into: produce the tables, hand them to `write_param`.
 
-### 5b — Train from real data 🔜 (`msgf-train`)
+### 5b — Train from real data ✅ (`msgf-train`)
 
 Training is a **counting pass** over confident PSMs — no learning-rate, fully reproducible (see
 `docs/models.md` §4.1). New crate `msgf-train`:
@@ -98,22 +98,32 @@ Training is a **counting pass** over confident PSMs — no learning-rate, fully 
    precursor offsets; mass-error dists. Reuse `msgf-chem` for ion m/z, tolerance, `round_half_up`.
 4. **Emit** with `write_param` (Step 4) → a `.param` that drops straight into the pipeline.
 
-Open unknown to resolve first: MS-GF+'s exact partition boundaries, `max_rank`,
-`error_scaling_factor`, candidate ion-type list and frequency thresholds, and the **noise
-population** definition — mine these from `ScoringParameterGeneratorWithErrors` (same class of
-reverse-engineering as the format itself).
+**Shipped** as `rust/crates/msgf-train` (`corpus.rs` / `partition.rs` / `ions.rs` / `counts.rs` +
+the `msgf-train` binary). 64,474 MassIVE-KB PSMs → a 176-partition `.param` in **3.4 s**; counting
+only, so the same corpus reproduces the model byte-for-byte.
 
-### 5c — Validate the model 🔜
+The open unknowns were resolved **without** reading `ScoringParameterGeneratorWithErrors`: the
+statistics are defined from how the scorer consumes each table, then checked against the numbers in
+the shipped models (row sums, absent bins, the nominal-grid offsets). Full write-up, including the
+per-section definitions and the normalisation evidence: **[`docs/training.md`](docs/training.md)**.
+
+### 5c — Validate the model ◐ (downstream parity measured; mechanics oracle skipped)
 
 Two gates (from `docs/models.md` §4.4):
 
-1. **Trainer mechanics (numeric):** run Java `ScoringParamGen` and `msgf-train` on the **same small
-   corpus**; the frequency tables should match within counting/float tolerance. Add
-   `validation/reference/generate_training_golden.sh`. Proves the trainer independent of corpus.
-2. **Downstream parity (statistical):** train on MassIVE-KB, score a **held-out** benchmark (F13, or
-   a MassIVE set absent from training), compare **PSM/peptide IDs at 1 % FDR** and SpecEValue rank
-   correlation against MS-GF+'s stock model. Bit-exactness is *not* expected (different corpus); the
-   bar is parity. Reuses the Phase-6 search harness.
+1. **Trainer mechanics (numeric):** ~~run Java `ScoringParamGen` on the same corpus~~ — **dropped
+   deliberately.** Our statistics are defined independently of theirs (that is the clean-room
+   position), so bin-for-bin agreement is not the right expectation. Reproducibility is pinned
+   instead by `tests/train_smoke.rs` (synthetic corpus, zero fetched bytes; byte-identical models
+   across runs).
+2. **Downstream parity (statistical):** ✅ measured with `validation/eval_trained_model.py` — both
+   models rescore the same PSM list of identified peptides + 5 mass-identical shuffled decoys, so
+   the gate needs no external FDR oracle (F13's own q-values are degenerate). Results:
+   **held-out MassIVE-KB — 1475 vs 1482 IDs at a 1 %-decoy threshold (99.5 % of the UC model),
+   ρ = 0.977 on log10 SpecEValue; F13 raw — 61 vs 66 IDs (92 %), ρ = 0.937.** Scoring costs +7 %
+   time. The residual gap is corpus-domain, not code: consensus library spectra show a 0.88 y-ion
+   hit rate vs 0.66 in raw data, so the model expects a more complete ion series than raw spectra
+   deliver. See `docs/training.md`.
 
 Throughout, the existing UC-`.param` golden tests stay green as the independent regression oracle.
 
@@ -128,11 +138,20 @@ Throughout, the existing UC-`.param` golden tests stay green as the independent 
 | 3 Document format | ✅ `docs/param-format.md` |
 | 4 Encoder (`write_param`) | ✅ shipped; 4/4 UC models byte-exact + synthetic model round-trips |
 | 5a Author programmatically | ✅ proven |
-| 5b `msgf-train` from MassIVE-KB | 🔜 next |
-| 5c Validation gates | 🔜 |
+| 5b `msgf-train` from MassIVE-KB | ✅ shipped; 64k CC0 PSMs → model in 3.4 s, reproducible |
+| 5c Validation gates | ◐ parity measured (99.5 % held-out / 92 % F13); mechanics oracle dropped by design |
 | (M0) `ScoringModel` trait seam | ⏳ deferred (permissive-native format) |
 
-**Immediate next action:** scaffold `msgf-train` and, before writing counters, mine the training
-constants from MS-GF+'s `ScoringParameterGeneratorWithErrors` (partition boundaries, `max_rank`,
-`error_scaling_factor`, ion-type candidates, noise-population definition) — capture them as a small
-golden so the trainer's mechanics gate (5c-1) has something to check against.
+**Shipped (2026-07-24):** the trained model is now the **default** —
+`msgf-scorer/models/MSGFRust_HCD_HighRes_Tryp_v1.param` (258,352 MassIVE-KB PSMs, 236 partitions)
+is embedded in the crate and used by every CLI subcommand when `--param` is omitted. The UC-derived
+goldens were untracked at the same time, so **nothing MSGF_Rust distributes is UC-licensed** and the
+repo carries an MIT `LICENSE`; the full accounting is in `LICENSING.md`. That closes the release
+blocker D5/M4 named for the *shipping path* — the remaining M4 item is model quality from raw
+spectra, below.
+
+**Immediate next action:** close the corpus gap (the quality half of milestone **M4**). The v0 model is trained on
+MassIVE-KB *consensus* spectra, which are more ion-complete than real acquisitions and have their
+precursor region stripped; both limits are measured in `docs/training.md`. Training from the raw
+acquisitions MassIVE-KB's provenance links to needs an **mzML reader in `msgf-io`** (not present) —
+that reader, not the trainer, is now the blocking work item.

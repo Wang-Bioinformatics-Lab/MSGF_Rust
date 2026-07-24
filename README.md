@@ -82,7 +82,6 @@ The `msgf` binary has four subcommands: `search`, `rescore`, `decoy`, and `fdr`.
 ```bash
 msgf search \
   --spectra run.mgf \
-  --param   HCD_HighRes_Tryp.param \
   --fasta   human.revCat.fasta \
   --fixed-mod C+57.021464 --var-mod M+15.994915 --num-mods 2 \
   --precursor-tol 10ppm --ti 0,1 \
@@ -93,8 +92,11 @@ FASTA → enzymatic digestion → modification-aware candidates → RawScore →
 target-decoy q-values, parallel over spectra. Output uses MS-GF+'s TSV column set
 (`SpecEValue`, `EValue`, `QValue`, `PepQValue`, …), so existing MS-GF+ tooling reads it.
 
-Two defaults are worth knowing:
+Three defaults are worth knowing:
 
+- **The scoring model is bundled.** With no `--param`, MSGF_Rust scores with its own
+  HCD/high-res/tryptic model, trained from the CC0 MassIVE-KB corpus — nothing to download, and
+  nothing UC-licensed on the path. Pass `--param` for another activation/instrument/enzyme.
 - **Missed cleavages are unlimited**, matching MS-GF+'s own default (`-maxMissedCleavages` has no
   limit there). This makes the index much larger; pass `-c 2` for a conventional search.
 - **Q-values need decoys.** Either search a concatenated database (`*.revCat.fasta` — decoys are
@@ -128,7 +130,6 @@ spectrum is then a cheap RawScore + tail lookup.
 ```bash
 msgf rescore \
   --spectra spectra.mgf \
-  --param   HCD_HighRes_Tryp.param \
   --psms    identifications.tsv \
   --out     rescored.tsv
 ```
@@ -136,7 +137,7 @@ msgf rescore \
 | Flag | | Description |
 |---|---|---|
 | `-s, --spectra <FILE>` | required | MS/MS spectra in **MGF** format. |
-| `-p, --param <FILE>`   | required | MS-GF+ scoring model (`.param`). Must match the acquisition (activation × resolution × enzyme). |
+| `-p, --param <FILE>`   | optional | Scoring model (`.param`). Defaults to the bundled MassIVE-KB-trained HCD/HighRes/Tryptic model; pass a file to match a different acquisition (activation × resolution × enzyme). |
 | `-i, --psms <FILE>`    | required | PSMs to rescore (**TSV**: `scan`, `peptide`, optional `charge`). |
 | `-o, --out <FILE>`     | optional | Output TSV path (default: stdout). |
 | `--ti <LO,HI>`         | optional | Isotope-error range, like MS-GF+ `-ti` (default `0,1`). |
@@ -170,18 +171,26 @@ END IONS
 The precursor's neutral mass is derived as `PEPMASS × charge − charge × proton`. (mzML support via
 the `mzdata` crate is planned; today the reader is MGF only.)
 
-#### Scoring model — `.param` (`--param`)
+#### Scoring model — `.param` (`--param`, optional)
 
-The binary MS-GF+ trained scoring model, one per (activation × resolution × enzyme × protocol),
-e.g. `HCD_HighRes_Tryp.param`, `HCD_QExactive_Tryp.param`, `CID_HighRes_Tryp.param`. These are
-**UC-licensed and not committed** to this repo. Fetch them (and the reference spectra/FASTA) with:
+A trained fragment-scoring model, one per (activation × resolution × enzyme × protocol).
+
+**You do not need one to run MSGF_Rust.** The default is bundled: `MSGFRust_HCD_HighRes_Tryp_v1`,
+counted by this project's own trainer (`msgf-train`) from 258k PSMs of the **CC0** MassIVE-KB
+peptide libraries. It is MIT-clean, ~1 MB, embedded in the binary, and announced on stderr at the
+start of every run so results stay traceable. Provenance and how it compares to MS-GF+'s model:
+[`rust/crates/msgf-scorer/models/README.md`](rust/crates/msgf-scorer/models/README.md).
+
+Pass `--param` when your data is not high-resolution HCD tryptic. MS-GF+'s own models
+(`HCD_QExactive_Tryp.param`, `CID_HighRes_Tryp.param`, `ETD_HighRes_Tryp.param`, …) are read
+unchanged, but they are **UC-licensed and not distributed here**; fetch them with:
 
 ```bash
-cd validation && ./fetch_reference_data.sh          # small: models + test spectra + tiny FASTAs
+cd validation && ./fetch_reference_data.sh          # models + test spectra + tiny FASTAs
 ```
 
-Use the model that matches how the data was acquired. For high-resolution Orbitrap/Q-Exactive HCD
-data searched as MS-GF+ `-inst 1`, that is `HCD_HighRes_Tryp.param`.
+Training a model for another identity is a counting pass over annotated spectra — see
+[`docs/training.md`](docs/training.md).
 
 #### PSM list — TSV (`--psms`)
 
@@ -395,6 +404,10 @@ MSGF_Rust/
 └── .github/workflows/     # release.yml — builds + publishes msgf binaries on tag
 ```
 
-**License:** the Rust code is MIT. The reference MS-GF+ `.param` models and spectra are
-UC-licensed and are **not** distributed here; `validation/fetch_reference_data.sh` retrieves them on
-demand. Only derived numeric facts (the golden JSON) are committed.
+**License: MIT** ([LICENSE](LICENSE)) — including the bundled scoring model, which was trained
+here from the CC0 MassIVE-KB corpus. Nothing MSGF_Rust distributes is UC-licensed: MS-GF+'s
+`.param` models, its test spectra, and every golden derived by running it are fetched or
+regenerated on demand by `validation/fetch_reference_data.sh` and
+`validation/reference/build_all_golden.sh`. The full accounting — what ships, what does not, the
+clean-room boundary, and the caveat that git *history* still contains the previously committed
+goldens — is in [LICENSING.md](LICENSING.md).

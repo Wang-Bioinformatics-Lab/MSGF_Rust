@@ -28,10 +28,16 @@ fn mgf_golden_matches() {
     let gdir = repo_subdir("validation/golden/spectra");
     let mut checked_files = 0;
 
-    for entry in std::fs::read_dir(&gdir)
-        .expect("golden/spectra must exist")
-        .flatten()
-    {
+    // golden/spectra is derived from UC-licensed spectra and is generated locally, not committed
+    // (see validation/golden/README.md) — a clean checkout skips.
+    let Ok(dir) = std::fs::read_dir(&gdir) else {
+        eprintln!(
+            "skip: {} absent (validation/reference/build_all_golden.sh)",
+            gdir.display()
+        );
+        return;
+    };
+    for entry in dir.flatten() {
         let g: Value =
             serde_json::from_str(&std::fs::read_to_string(entry.path()).unwrap()).unwrap();
         if g["format"] != "mgf" {

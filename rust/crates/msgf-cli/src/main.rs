@@ -13,6 +13,7 @@
 
 mod decoy;
 mod fdr;
+mod model;
 mod rescore;
 mod search;
 
@@ -32,17 +33,20 @@ COMMANDS:
 
 Run `msgf <COMMAND> --help` for that command's options.
 
+Scoring uses the bundled HCD/HighRes/Tryptic model (trained from the CC0 MassIVE-KB corpus)
+unless `--param <MODEL.param>` names another one.
+
 EXAMPLES:
-    # Search a concatenated target-decoy database
-    msgf search -s run.mgf -p HCD_HighRes_Tryp.param -d human.revCat.fasta \\
+    # Search a concatenated target-decoy database (no --param: uses the bundled model)
+    msgf search -s run.mgf -d human.revCat.fasta \\
         --fixed-mod C+57.021464 --var-mod M+15.994915 -t 10ppm -o psms.tsv
 
     # Or let it build the decoys first
     msgf decoy -d human.fasta -o human.revCat.fasta
-    msgf search -s run.mgf -p HCD_HighRes_Tryp.param -d human.revCat.fasta -o psms.tsv
+    msgf search -s run.mgf -d human.revCat.fasta -o psms.tsv
 
     # Rescore an existing PSM list, then add q-values
-    msgf rescore -s run.mgf -p HCD_HighRes_Tryp.param -i psms.tsv -o rescored.tsv
+    msgf rescore -s run.mgf -i psms.tsv -o rescored.tsv
     msgf fdr -i rescored.tsv -o rescored.q.tsv
 ";
 

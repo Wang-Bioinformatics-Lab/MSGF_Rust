@@ -19,11 +19,10 @@ pub const USAGE: &str = "\
 msgf search — search MS/MS spectra against a protein database
 
 USAGE:
-    msgf search --spectra <FILE.mgf> --param <MODEL.param> --fasta <DB.fasta> [OPTIONS]
+    msgf search --spectra <FILE.mgf> --fasta <DB.fasta> [OPTIONS]
 
 REQUIRED:
     -s, --spectra <FILE>   MS/MS spectra, MGF format (SCANS=, CHARGE=, PEPMASS=)
-    -p, --param   <FILE>   MS-GF+ scoring model (.param, e.g. HCD_HighRes_Tryp.param)
     -d, --fasta   <FILE>   Protein database, FASTA
 
 OUTPUT:
@@ -72,7 +71,7 @@ NOTES:
 
 pub struct Config {
     spectra: PathBuf,
-    param: PathBuf,
+    param: Option<PathBuf>,
     fasta: PathBuf,
     out: Option<PathBuf>,
     unroll: bool,
@@ -118,15 +117,14 @@ impl Config {
                 }
                 "-c" | "--missed-cleavages" => {
                     let v = want("--missed-cleavages")?;
-                    digest.max_missed_cleavages = if v.trim() == "-1"
-                        || v.trim().eq_ignore_ascii_case("unlimited")
-                    {
-                        msgf_db::enzyme::UNLIMITED_MISSED_CLEAVAGES
-                    } else {
-                        v.parse().map_err(|_| {
+                    digest.max_missed_cleavages =
+                        if v.trim() == "-1" || v.trim().eq_ignore_ascii_case("unlimited") {
+                            msgf_db::enzyme::UNLIMITED_MISSED_CLEAVAGES
+                        } else {
+                            v.parse().map_err(|_| {
                             "--missed-cleavages must be a non-negative integer, -1, or `unlimited`"
                         })?
-                    }
+                        }
                 }
                 "--min-len" => {
                     digest.min_len = want("--min-len")?
@@ -212,7 +210,7 @@ impl Config {
 
         Ok(Config {
             spectra: spectra.ok_or("missing --spectra")?,
-            param: param.ok_or("missing --param")?,
+            param,
             fasta: fasta.ok_or("missing --fasta")?,
             out,
             unroll,
@@ -268,8 +266,8 @@ pub fn run(cfg: &Config) -> Result<(), String> {
             .map_err(|e| format!("configuring {n} threads: {e}"))?;
     }
 
-    let model = msgf_scorer::read_param_file(&cfg.param)
-        .map_err(|e| format!("reading model {}: {e:?}", cfg.param.display()))?;
+    let (model, model_source) = crate::model::load(cfg.param.as_deref())?;
+    crate::model::announce(&model_source, &model);
 
     let prefix = normalize_prefix(&cfg.decoy_prefix);
     let mut db = ProteinDb::read(&cfg.fasta, &prefix)

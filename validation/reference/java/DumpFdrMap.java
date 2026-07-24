@@ -98,10 +98,15 @@ public class DumpFdrMap {
 
     static Case[] cases() {
         return new Case[]{
-                new Case("f13_head",
-                        "the real head of the F13 golden: one target better than every decoy, then interleaved",
-                        new float[]{8.81108e-10f, 4.9508464e-9f, 6.200421e-9f, 7.7734414e-9f, 1.3967459e-8f},
-                        new float[]{2.443009e-9f, 2.5732516e-9f, 2.6536264e-9f, 8.296425e-9f, 8.657921e-9f}),
+                // Deliberately synthetic. This case used to carry the literal head of the F13
+                // golden, but those SpecEValues are frozen output of *running* MS-GF+ on UC test
+                // data, which LICENSING.md excludes from the repository. The shape is what has
+                // discriminating power -- one target better than every decoy, then interleaved --
+                // and it is reproduced here with numbers of our own.
+                new Case("head_one_target_then_interleaved",
+                        "one target better than every decoy, then the two lists interleave",
+                        new float[]{9e-10f, 5e-9f, 6.2e-9f, 7.8e-9f, 1.4e-8f},
+                        new float[]{2.4e-9f, 2.6e-9f, 2.7e-9f, 8.3e-9f, 8.7e-9f}),
 
                 new Case("tie_within_decoys",
                         "two decoys share a score: does the sweep step by one decoy or by the whole run?",
