@@ -260,7 +260,7 @@ impl<'a> ScoredSpectrum<'a> {
     }
 
     /// `DBScanScorer.getEdgeScoreInt` for one edge (between two nominal node masses).
-    fn edge_score_int(&self, cur: i32, prev: i32, theo_mass: f32, max_nominal: i32) -> i32 {
+    pub fn edge_score(&self, cur: i32, prev: i32, theo_mass: f32, max_nominal: i32) -> i32 {
         if cur >= max_nominal || prev >= max_nominal || cur < 0 || prev < 0 {
             return 0;
         }
@@ -310,12 +310,12 @@ impl<'a> ScoredSpectrum<'a> {
         if !self.main_ion_is_prefix() {
             for i in (from..=to - 2).rev() {
                 let theo = (accurate[i + 1] - accurate[i]) as f32;
-                score += self.edge_score_int(pep - nominal[i], pep - nominal[i + 1], theo, max_n);
+                score += self.edge_score(pep - nominal[i], pep - nominal[i + 1], theo, max_n);
             }
         } else {
             for i in from..=to - 2 {
                 let theo = (accurate[i] - accurate[i - 1]) as f32;
-                score += self.edge_score_int(nominal[i], nominal[i - 1], theo, max_n);
+                score += self.edge_score(nominal[i], nominal[i - 1], theo, max_n);
             }
         }
         score

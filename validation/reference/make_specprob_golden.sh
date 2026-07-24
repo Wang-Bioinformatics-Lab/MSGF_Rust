@@ -29,7 +29,10 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAR="$HERE/MSGFPlus.jar"
-MODEL="$HERE/../data/models/HCD_QExactive_Tryp.param"
+# The iprg2013_F13 search used `-inst 1` = HighRes (Orbitrap), which loads HCD_HighRes_Tryp.param
+# (NOT QExactive / -inst 3). SpecProbDumper builds the scorer from the HighRes resource; this path
+# is passed only as a label / for provenance.
+MODEL="$HERE/../data/models/HCD_HighRes_Tryp.param"
 MGF="$HERE/../data/spectra/F13.mgf"
 MODS="$HERE/../data/config/iprg-2013_Mods.txt"
 SCORED="$HERE/../golden/rawscore/f13_scored_spectrum.golden.json"
