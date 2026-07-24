@@ -19,6 +19,7 @@ Doc map — read the relevant one before substantial work:
 |---|---|
 | `PLAN.md` | authoritative design doc: phases, decisions (D1–D5), algorithm derivation |
 | `PLAN1.md` | the model-ownership execution plan (own the `.param` → train our own), with status |
+| `PLAN2.md` | target-decoy + FDR: decoy FASTA, q-values, `msgf-search` wiring; normative MS-GF+ TDA semantics |
 | `docs/models.md` | the two trained/implicit models, what taints what, plan to retrain (decision D5) |
 | `docs/param-format.md` | normative byte-level `.param` spec — the reference for any encoder/trainer |
 | `PERFORMANCE.md` | current Rust-vs-Java timings and how the DP got fast |
