@@ -13,6 +13,9 @@
 
 pub mod preprocess;
 pub mod scored_spectrum;
+pub mod write;
+
+pub use write::{write_param, write_param_file};
 
 use msgf_chem::Tolerance;
 use std::fs;
@@ -84,7 +87,7 @@ pub struct ErrorDist {
 }
 
 /// A fully decoded MS-GF+ scoring model.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScoringModel {
     pub version: i32,
     pub activation: String,
