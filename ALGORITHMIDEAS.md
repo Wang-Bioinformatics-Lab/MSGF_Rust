@@ -1,67 +1,35 @@
-# Generating-Function Algorithm Ideas
+# Algorithm Ideas
 
-This document collects exact or potentially exact ways to reduce the generating-function dynamic
-program. Numerical compatibility with MS-GF+ remains the primary constraint: optimizations must
-preserve edge order, floating-point operations, the complete score distribution, DeNovoScore, and
-SpecEValue unless an explicitly narrower API is introduced.
+This file is the index for algorithm and performance research. Detailed measurements, rejected
+approaches, implementation notes, and reproduction commands belong under [`research-trials/`](research-trials/).
 
-## Experimental Reference
+## Generating Function and Scoring Pipeline
 
-Draft PR [#9 — prune dead DP subgraphs](https://github.com/Wang-Bioinformatics-Lab/MSGF_Rust/pull/9)
-is a reference implementation, not intended for direct merging. It explores two complementary
-optimizations:
+See the [full optimization trial report](research-trials/generating-function-optimization.md).
 
-1. **Remove redundant range work.** Each node's destination range is already constructed as the
-   union of its shifted predecessor ranges. The convolution can therefore use the full predecessor
-   slice without recomputing overlap clipping or bounds checks.
-2. **Prune nodes outside sink paths.** A reverse CSR walk marks the union of all requested sinks'
-   ancestors. The forward probability DP skips source-reachable nodes that cannot contribute to a
-   sink.
+| Idea or trial | Fidelity | Status | Key result |
+|---|---|---|---|
+| Remove redundant DP range and bounds work | Exact | Draft PR [#9](https://github.com/Wang-Bioinformatics-Lab/MSGF_Rust/pull/9) | Combined with sink pruning: 19.1% faster DP |
+| Prune nodes outside all sink paths | Exact | Draft PR #9 | 21% fewer cells; 12.9% faster pipeline with both PR changes |
+| Threshold-aware tail pruning | Exact above declared threshold | Branch `worktree-genfunc-algo-speedups` / `worktree-genfunc-aggressive-prune` | 1.3× on poor F13 matches; up to 6.2× near DeNovoScore |
+| Node-score cache and ion-major table sweep | Exact | Branch `worktree-spec-tables-perf` | `spec-tables` 820 ms → 111 ms; throughput 314/s → 371/s |
+| Saddlepoint tail inversion | Approximate, opt-in | Experimental branch only | 3.2× DP speed; 96.1% within 0.05 log10 |
+| Tiered saddlepoint then exact DP | Mixed | Proposed | Approximate screening with exact evaluation near decisions |
+| Sparse/dense score distributions | Potentially exact | Proposed | Measure early-node sparsity before implementing |
+| Reuse reachability across isotope sinks | Exact | Proposed | Avoid rebuilding nearly identical reverse bounds |
 
-On the 1,406-spectrum F13 benchmark, draft PR #9 produced these measured gains:
+## Important Conclusions
 
-| Measurement | Before | PR #9 | Improvement |
-|---|---:|---:|---:|
-| DP compute | 3.09 s | 2.50 s | **19.1% faster** |
-| Full pipeline | 4.48 s | 3.90 s | **12.9% faster** |
-| Throughput | 314 spectra/s | 360 spectra/s | **14.6% higher** |
-| Distribution cells per graph | 136,351 | 107,746 | **21.0% fewer** |
+- PR #9 and threshold pruning overlap: `max_remaining == i32::MIN` performs the same sink-ancestor
+  elimination, so their gains are not additive.
+- Exact cell pruning reaches a fixed per-edge floor. At DeNovoScore − 5, 390× fewer cells produced
+  only a 6.2× DP speedup; further work should reduce edge-visit cost or optimize graph construction.
+- Top caps, Chernoff trimming, extra dead-node sweeps, FFT convolution, and score-lattice coarsening
+  were evaluated and rejected. The report records why and, where available, the measured error.
+- Approximate algorithms must remain explicitly named and isolated from the bit-exact default path.
 
-The sink-ancestor pruning step alone was approximately 15.6% faster in the DP and 10.6% faster
-end-to-end. Golden DeNovoScore and SpecEValue remained exact for all 30 checked PSMs.
+## Validation Standard
 
-## Further Exact-Pruning Ideas
-
-### Threshold-aware score pruning
-
-Search currently computes the full generating function before candidate RawScores. A specialized
-search path could instead:
-
-1. score candidates and retain the top matches;
-2. determine the lowest RawScore whose tail probability is needed;
-3. compute an optimistic maximum remaining score from every node to a sink;
-4. discard a state only when `current_score + max_remaining < required_score`.
-
-This can preserve requested upper-tail probabilities, but it cannot implement today's arbitrary
-`GenFunc::spectral_probability` queries or derive DeNovoScore from a truncated distribution.
-DeNovoScore would need a separate exact maximum-path calculation, and rescoring would require
-grouping PSMs by spectrum before building the bounded distribution.
-
-### Reuse reachability across isotope candidates
-
-The `-ti 0,1` graphs share one edge structure and have adjacent sinks. Investigate caching or
-incrementally updating the reverse-reachability mask rather than rebuilding it for each candidate.
-Measure the mask-building cost first; it is small relative to convolution.
-
-### Hybrid sparse/dense distributions
-
-Early nodes may contain many zero score cells before distributions become dense. A sparse
-representation could avoid those operations and switch permanently to the current contiguous arena
-above a measured density threshold. Entries must retain score order, and conversion must not change
-addition order.
-
-## Validation Gates
-
-Every retained experiment should pass `cargo test --workspace`, the release
-`golden_specprob` test, Clippy, and the full F13 profile. Do not use probability cutoffs, `f32`,
-FMA, FFT convolution, or reordered summation in the bit-exact path.
+Retained exact changes must pass the full workspace suite, release golden SpecEValue tests, Clippy,
+and the F13 profile. Approximate trials must publish accuracy against the exact DP and must never be
+selected silently by search or CLI code.
