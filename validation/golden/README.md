@@ -30,13 +30,20 @@ produce different bytes.
 
 ```bash
 cd validation
-./fetch_reference_data.sh --all        # inputs + iPRG FASTA + the MS-GF+ jar (needs Java 11+)
-cd reference && ./build_all_golden.sh  # rebuilds every golden, then runs the regression suite
+./fetch_reference_data.sh --all                    # inputs + iPRG FASTA + the MS-GF+ jar (needs Java 11+)
+cd reference && ./build_all_golden.sh --with-java  # every golden, then the regression suite
 ```
 
-Without this step the golden-backed tests **skip** — `cargo test` on a clean checkout still passes,
-it just validates less. `cargo test -- --nocapture | grep skip:` shows what was skipped.
+**`--with-java` is the flag that matters.** Without it only the no-Java families are built, and the
+tests backed by everything else keep skipping. The MS-GF+-derived families are a dependency chain
+(F13 search → scored spectrum → RawScore / SpecEValue / HighRes), so run the script rather than the
+`make_*.sh` pieces individually; it sequences them correctly.
 
-The no-Java families (`chemistry/`, `spectra/`, `param_inventory`) can be rebuilt from
-`../reference/make_*.py` alone; the rest need the jar. `fdr/` is the cheapest of those —
-`../reference/make_fdr_golden.sh` needs only the jar and a JVM, no spectra, models or database.
+Without this step the golden-backed tests **skip** — `cargo test` on a clean checkout still passes,
+it just validates less. `cargo test -- --nocapture | grep skip:` shows what was skipped, and a run
+that reports zero skips is the one that actually exercised the fidelity contract.
+
+The no-Java families (`chemistry/`, `spectra/`, `param_inventory`, `worked_example`) can be rebuilt
+from `../reference/make_*.py` + `parse_msgf_tsv.py` alone; the rest need the jar. `fdr/` is the
+cheapest of those — `../reference/make_fdr_golden.sh` needs only the jar and a JVM, no spectra,
+models or database.
