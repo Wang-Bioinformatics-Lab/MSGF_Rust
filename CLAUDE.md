@@ -166,7 +166,18 @@ isotope-error graphs, AVX convolution kernel) — check there before "optimizing
 
 The reason this project has value is that the output is **bit-exact to MS-GF+**, not an
 approximation. Integer scores (RawScore, DeNovoScore) must match **exactly**; SpecEValue/EValue
-within `|log10(rust/java)| ≤ 0.05`. When changing scoring, preprocessing, or the DP, the bar is
+within `|log10(rust/java)| ≤ 0.05`.
+
+**That contract is conditional on MS-GF+'s own `.param`.** Every golden is generated with one
+(usually `HCD_HighRes_Tryp.param`) and every fidelity test passes one explicitly. The *bundled*
+default model (`msgf-scorer/models/`, trained here from MassIVE-KB) is a different scoring function
+and is deliberately **not** held to bit-exactness — on F13 it agrees with MS-GF+ on the top peptide
+for 66.6% of scans vs 92.7% for MS-GF+'s model. That is expected, not a regression. Don't "fix" it,
+don't write a golden test that pins the bundled model against MS-GF+ output, and don't let a golden
+silently fall back to the bundled default — assert the model you meant to load.
+`msgf-scorer/models/README.md` holds the measured comparison.
+
+When changing scoring, preprocessing, or the DP, the bar is
 "golden tests still green," and reproducing Java's exact arithmetic (rounding mode, summation order,
 `.param` decode) matters more than idiomatic Rust. If you must diverge from the Java algorithm,
 that is a deliberate, reviewed change — flag it, don't silently "improve" it.
