@@ -14,6 +14,7 @@
 //! bit-for-bit; only the data layout is optimized.
 
 pub mod graph;
+pub mod saddle;
 
 /// The shift-add convolution kernel shared by every distribution update: for each source score
 /// `t`, `dst[t + score_diff] += src[t] * aa_prob`. This is the single source of truth for the
@@ -232,11 +233,25 @@ pub struct Cleavage {
 /// The computed generating function.
 pub struct GenFunc {
     pub dist: ScoreDist,
+    /// Lowest score this distribution is *valid* at. [`compute`] computes the whole distribution
+    /// and leaves this at `i32::MIN`; [`compute_tail_into`] discards the score cells that provably
+    /// cannot reach its threshold, so probabilities below `valid_from` are meaningless (the cells
+    /// at and above it are bit-identical to the full computation — see [`compute_tail_into`]).
+    pub valid_from: i32,
 }
 
 impl GenFunc {
     /// Spectral probability (the p-value) at the observed RawScore.
+    ///
+    /// For a tail-pruned generating function this is only defined for
+    /// `raw_score >= self.valid_from`; querying below that is a caller bug (debug-asserted) and
+    /// returns the tail from `valid_from`, which over-estimates.
     pub fn spectral_probability(&self, raw_score: i32) -> f64 {
+        debug_assert!(
+            raw_score >= self.valid_from,
+            "spectral_probability({raw_score}) below the pruning threshold {}",
+            self.valid_from
+        );
         self.dist.spectral_probability(raw_score)
     }
     /// Maximum achievable score (DeNovoScore) is `max_score() - 1`.
@@ -270,6 +285,8 @@ impl NodeDist {
 pub struct DpScratch {
     arena: Vec<f64>,
     dists: Vec<NodeDist>,
+    /// `max_remaining` scratch, reused across calls (see [`compute_tail_into`]).
+    rem: Vec<i32>,
 }
 
 impl DpScratch {
@@ -298,7 +315,13 @@ pub fn merge_group(gfs: &[GenFunc]) -> Option<GenFunc> {
     for g in gfs {
         merged.add_prob_dist(&g.dist, 0, 1.0);
     }
-    Some(GenFunc { dist: merged })
+    // A merged group is only valid where *every* member is: the least-pruned member still had its
+    // low cells discarded.
+    let valid_from = gfs.iter().map(|g| g.valid_from).max().unwrap_or(i32::MIN);
+    Some(GenFunc {
+        dist: merged,
+        valid_from,
+    })
 }
 
 /// Compute the generating function over `graph` (topological order, node 0 = source), summing the
@@ -317,6 +340,78 @@ pub fn compute_into(
     sinks: &[usize],
     cleavage: Option<Cleavage>,
 ) -> Option<GenFunc> {
+    compute_inner(sc, graph, sinks, cleavage, None)
+}
+
+/// Upper-tail-only generating function: identical to [`compute_into`] for every score at or above
+/// `threshold`, but it never materializes the score cells that provably cannot reach it.
+///
+/// **Why this is exact.** Let `max_rem[m]` be the best score any path can still earn between node
+/// `m` and a sink. A cell `(m, s)` can only ever end at a final score `<= s + max_rem[m]`, so if
+/// `s + max_rem[m] < threshold` every path through it lands strictly below `threshold` and it
+/// cannot contribute to the tail. Dropping it is not an approximation: the retained cells are
+/// reached by exactly the same multiply-adds, in exactly the same order, as in the unpruned DP, so
+/// they are **bit-identical** — `spectral_probability(t)` for `t >= threshold` returns the same
+/// `f64` the full computation would. Only the discarded low-score cells differ (they are absent).
+///
+/// The `threshold` is what a search already knows before it needs a p-value: the RawScore of the
+/// worst PSM it will report for this spectrum. Cost falls as the threshold approaches the
+/// DeNovoScore — i.e. the DP gets cheaper exactly as the match gets better. The bound is computed
+/// by one integer sweep of the CSR (`max_remaining`), ~1% of the DP's own cost.
+///
+/// `cleavage` shifts the merged distribution by `credit`/`penalty`, so the threshold is lowered by
+/// `credit` internally to keep the credited branch intact. The returned [`GenFunc`] records the
+/// resulting [`GenFunc::valid_from`]; querying below it is meaningless.
+pub fn compute_tail_into(
+    sc: &mut DpScratch,
+    graph: &Graph,
+    sinks: &[usize],
+    cleavage: Option<Cleavage>,
+    threshold: i32,
+) -> Option<GenFunc> {
+    compute_inner(sc, graph, sinks, cleavage, Some(threshold))
+}
+
+/// `max_rem[m]` = the largest score still obtainable on any path from `m` to a sink, or `i32::MIN`
+/// when no sink is reachable from `m`. One descending sweep of the same CSR: an edge's `prev` index
+/// is always strictly below the node it enters, so every node is finalized before it is read.
+/// `max_rem[0]` is the source's best full-path score — the DeNovoScore before cleavage weighting.
+fn max_remaining(rem: &mut Vec<i32>, graph: &Graph, sinks: &[usize], n: usize) {
+    rem.clear();
+    rem.resize(n, i32::MIN);
+    for &s in sinks {
+        if s < n {
+            rem[s] = 0;
+        }
+    }
+    for i in (1..n).rev() {
+        let ri = rem[i];
+        if ri == i32::MIN {
+            continue;
+        }
+        let is_sink = sinks.contains(&i);
+        let base = ri + graph.node_score[i];
+        let (e0, e1) = (
+            graph.edge_start[i] as usize,
+            graph.edge_start[i + 1] as usize,
+        );
+        for e in e0..e1 {
+            let p = graph.edge_prev[e] as usize;
+            let cand = base + if is_sink { 0 } else { graph.edge_score[e] };
+            if cand > rem[p] {
+                rem[p] = cand;
+            }
+        }
+    }
+}
+
+fn compute_inner(
+    sc: &mut DpScratch,
+    graph: &Graph,
+    sinks: &[usize],
+    cleavage: Option<Cleavage>,
+    threshold: Option<i32>,
+) -> Option<GenFunc> {
     let n_full = graph.n_nodes();
     if n_full == 0 {
         return None;
@@ -331,6 +426,23 @@ pub fn compute_into(
         .unwrap_or(n_full)
         .min(n_full);
     let kernel = select_axpy(); // chosen once; the per-edge convolution below dominates the DP
+
+    // Tail pruning: the per-node score floor `floor[i] = cut - max_rem[i]`. `cut` is clamped to the
+    // best achievable score so the DeNovoScore cell always survives and `max_score()` stays exact
+    // even when the caller asks for a threshold no peptide can reach.
+    let cut = match threshold {
+        Some(t) => {
+            max_remaining(&mut sc.rem, graph, sinks, n);
+            let credit = cleavage.map_or(0, |c| c.credit.max(c.penalty));
+            let denovo = sc.rem[0];
+            if denovo == i32::MIN {
+                return None; // no sink is reachable from the source
+            }
+            Some(t.saturating_sub(credit).min(denovo))
+        }
+        None => None,
+    };
+
     sc.arena.clear();
     sc.dists.clear();
     sc.dists.resize(n, NodeDist::ABSENT);
@@ -364,8 +476,17 @@ pub fn compute_into(
             cur_min = cur_min.min(pd.min_score + combined);
             cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
         }
+        // Raise the floor to the lowest score that can still reach `cut` (see `compute_tail_into`).
+        // `max_rem[i] == i32::MIN` means no sink lies beyond this node, so it is dropped entirely.
+        if let Some(cut) = cut {
+            let rem = sc.rem[i];
+            if rem == i32::MIN {
+                continue;
+            }
+            cur_min = cur_min.max(cut - rem);
+        }
         if cur_min >= cur_max {
-            continue; // unreachable
+            continue; // unreachable, or wholly below the tail threshold
         }
 
         let len = (cur_max - cur_min) as usize;
@@ -435,7 +556,10 @@ pub fn compute_into(
         }
         None => merged,
     };
-    Some(GenFunc { dist })
+    Some(GenFunc {
+        dist,
+        valid_from: threshold.unwrap_or(i32::MIN),
+    })
 }
 
 #[cfg(test)]
@@ -484,6 +608,86 @@ mod tests {
         let gf = compute(&g, &[1], None).unwrap();
         approx(gf.spectral_probability(0), 1.0); // score 0, not 5
         assert_eq!(gf.max_score(), 0);
+    }
+
+    /// A pseudo-random but deterministic graph with the shape of a real de novo graph: nodes in
+    /// topological order, each with several scored incoming edges.
+    fn random_graph(n: usize, seed: u64) -> Vec<AdjNode> {
+        let mut s = seed | 1;
+        let mut rng = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        (0..n)
+            .map(|i| {
+                let ns = if i == 0 { 0 } else { (rng() % 13) as i32 - 6 };
+                let edges = (1..=6usize)
+                    .filter(|d| i >= *d)
+                    .map(|d| (i - d, (rng() % 11) as i32 - 5, 0.05))
+                    .collect();
+                (ns, edges)
+            })
+            .collect()
+    }
+
+    /// The whole point of [`compute_tail_into`]: above the threshold it is not merely close to the
+    /// full DP, it is the identical `f64` — the retained cells accumulate the same products in the
+    /// same order. Checked bit-for-bit (`to_bits`), not approximately.
+    #[test]
+    fn tail_pruning_is_bit_identical_above_threshold() {
+        let cleave = Cleavage {
+            credit: 2,
+            penalty: -11,
+            prob_cleavage_sites: 0.1,
+        };
+        for seed in [1u64, 7, 12345, 999] {
+            for cl in [None, Some(cleave)] {
+                let g = Graph::from_adj(&random_graph(120, seed));
+                let sinks = [119usize];
+                let full = compute(&g, &sinks, cl).expect("reachable");
+                let denovo = full.max_score();
+                assert_eq!(full.valid_from, i32::MIN);
+                // Sweep thresholds from "everything survives" past the best achievable score.
+                for t in (full.dist.min_score - 2)..=(denovo + 3) {
+                    let mut sc = DpScratch::default();
+                    let tail = compute_tail_into(&mut sc, &g, &sinks, cl, t).expect("reachable");
+                    assert_eq!(tail.max_score(), denovo, "DeNovoScore must survive pruning");
+                    assert_eq!(tail.valid_from, t);
+                    assert_eq!(
+                        tail.spectral_probability(t).to_bits(),
+                        full.spectral_probability(t).to_bits(),
+                        "seed {seed} threshold {t}: pruned tail differs from full DP"
+                    );
+                    // Every score at or above the threshold, not just the threshold itself.
+                    for q in t..=(denovo + 2) {
+                        assert_eq!(
+                            tail.spectral_probability(q).to_bits(),
+                            full.spectral_probability(q).to_bits(),
+                            "seed {seed} threshold {t} query {q}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pruning must shrink the work it claims to shrink.
+    #[test]
+    fn tail_pruning_shrinks_the_arena() {
+        let g = Graph::from_adj(&random_graph(400, 42));
+        let sinks = [399usize];
+        let mut sc = DpScratch::default();
+        compute_into(&mut sc, &g, &sinks, None).unwrap();
+        let full_cells = sc.arena_len();
+        let denovo = compute(&g, &sinks, None).unwrap().max_score();
+        compute_tail_into(&mut sc, &g, &sinks, None, denovo - 5).unwrap();
+        let pruned_cells = sc.arena_len();
+        assert!(
+            pruned_cells * 10 < full_cells,
+            "expected a large cut, got {pruned_cells} of {full_cells}"
+        );
     }
 
     #[test]

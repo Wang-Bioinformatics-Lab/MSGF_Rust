@@ -23,7 +23,7 @@ use msgf_chem::{mass, scaling, Tolerance};
 use msgf_db::enzyme::DigestParams;
 use msgf_db::fasta::ProteinDb;
 use msgf_genfunc::graph::{build_reverse_graph, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch, GenFunc};
+use msgf_genfunc::{compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc};
 use msgf_io::Spectrum;
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -298,7 +298,7 @@ impl<'a> SearchEngine<'a> {
         }
         let (ti_lo, ti_hi) = self.params.isotope_errors;
 
-        // --- the per-spectrum half: preprocess, score, and build the generating function once ---
+        // --- the per-spectrum half: preprocess and score the peaks ---
         let peaks: Vec<(f32, f32)> = spec
             .peaks
             .iter()
@@ -307,6 +307,50 @@ impl<'a> SearchEngine<'a> {
         let ranked = preprocess(self.model, charge, parent_mass, &peaks);
         let scored = ScoredSpectrum::from_ranked_peaks(self.model, charge, parent_mass, ranked);
 
+        // --- the per-candidate half: every peptide in the precursor window gets a RawScore ---
+        // Identical peptides occurring in several proteins score identically, so they are grouped
+        // into one match carrying every protein occurrence — that is what decides decoy status
+        // (`PLAN2.md` §1.3) and stops a repeated peptide consuming the whole top-N list.
+        //
+        // This runs *before* the generating function, which needs nothing from it but gains a great
+        // deal: the RawScore of the worst PSM we will report is the tail threshold, and the DP can
+        // then skip every score cell that provably cannot reach it (see `compute_tail_into`).
+        let mut grouped: HashMap<String, Hit> = HashMap::new();
+        let mut buf = ScoreBuffers::default();
+        for k in ti_lo..=ti_hi {
+            let target = parent_mass as f64 - k as f64 * ISOTOPE_STEP;
+            let win = self.params.precursor_tol.window_da(target);
+            for cand in self.index.window(target - win, target + win) {
+                let key = self.peptide_string(cand, false);
+                match grouped.get_mut(&key) {
+                    Some(hit) => hit.proteins.push(cand.protein),
+                    None => {
+                        let raw_score = self.raw_score(&scored, cand, &mut buf);
+                        grouped.insert(
+                            key,
+                            Hit {
+                                raw_score,
+                                isotope_error: k,
+                                candidate: *cand,
+                                proteins: vec![cand.protein],
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        if grouped.is_empty() {
+            return Vec::new(); // no candidates — the whole generating function is skipped
+        }
+        let mut hits: Vec<(String, Hit)> = grouped.into_iter().collect();
+        // Highest RawScore first; the SpecEValue tail is monotone in RawScore, so for a single
+        // spectrum this is also best-SpecEValue order. The peptide key breaks ties deterministically.
+        hits.sort_by(|a, b| b.1.raw_score.cmp(&a.1.raw_score).then(a.0.cmp(&b.0)));
+        hits.truncate(self.params.num_matches);
+        // Every reported PSM is looked up at or above this score, so nothing below it is needed.
+        let threshold = hits.iter().map(|h| h.1.raw_score).min().unwrap_or(i32::MIN);
+
+        // --- the generating function: built once, tail-pruned to the reported PSMs' scores ---
         // An isotope error of +k means the measured precursor is ~k Da high, so the true peptide
         // mass is k nominal bins lower.
         let sinks: Vec<i32> = (pep_nominal - ti_hi..=pep_nominal - ti_lo)
@@ -345,7 +389,8 @@ impl<'a> SearchEngine<'a> {
         let mut gfs: Vec<GenFunc> = Vec::with_capacity(sinks.len());
         for &p in &sinks {
             graph.recompute_node_scores(&tables, p, &[p]);
-            if let Some(gf) = compute_into(scratch, &graph, &[p as usize], cleavage) {
+            if let Some(gf) = compute_tail_into(scratch, &graph, &[p as usize], cleavage, threshold)
+            {
                 gfs.push(gf);
             }
         }
@@ -353,43 +398,6 @@ impl<'a> SearchEngine<'a> {
             return Vec::new();
         };
         let denovo = gf.max_score();
-
-        // --- the per-candidate half: every peptide in the precursor window is a tail lookup ---
-        // Identical peptides occurring in several proteins score identically, so they are grouped
-        // into one match carrying every protein occurrence — that is what decides decoy status
-        // (`PLAN2.md` §1.3) and stops a repeated peptide consuming the whole top-N list.
-        let mut grouped: HashMap<String, Hit> = HashMap::new();
-        let mut buf = ScoreBuffers::default();
-        for k in ti_lo..=ti_hi {
-            let target = parent_mass as f64 - k as f64 * ISOTOPE_STEP;
-            let win = self.params.precursor_tol.window_da(target);
-            for cand in self.index.window(target - win, target + win) {
-                let key = self.peptide_string(cand, false);
-                match grouped.get_mut(&key) {
-                    Some(hit) => hit.proteins.push(cand.protein),
-                    None => {
-                        let raw_score = self.raw_score(&scored, cand, &mut buf);
-                        grouped.insert(
-                            key,
-                            Hit {
-                                raw_score,
-                                isotope_error: k,
-                                candidate: *cand,
-                                proteins: vec![cand.protein],
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        if grouped.is_empty() {
-            return Vec::new();
-        }
-        let mut hits: Vec<(String, Hit)> = grouped.into_iter().collect();
-        // Highest RawScore first; the SpecEValue tail is monotone in RawScore, so for a single
-        // spectrum this is also best-SpecEValue order. The peptide key breaks ties deterministically.
-        hits.sort_by(|a, b| b.1.raw_score.cmp(&a.1.raw_score).then(a.0.cmp(&b.0)));
-        hits.truncate(self.params.num_matches);
 
         let db_size = self.db_size();
         hits.into_iter()
