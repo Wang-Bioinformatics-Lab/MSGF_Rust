@@ -84,11 +84,11 @@ pub struct Psm {
     /// Peptide with flanking context and inline mod deltas, e.g. `K.SAM+15.995PLER.A`.
     pub peptide: String,
     /// Mod-bearing sequence with flanks stripped and upper-cased — the peptide identity used for
-    /// peptide-level FDR (`PLAN2.md` §1.4).
+    /// peptide-level FDR (`plans/PLAN2.md` §1.4).
     pub peptide_key: String,
     /// Every protein occurrence of this peptide, in database order.
     pub proteins: Vec<String>,
-    /// `true` only when **every** occurrence is a decoy (`PLAN2.md` §1.3).
+    /// `true` only when **every** occurrence is a decoy (`plans/PLAN2.md` §1.3).
     pub is_decoy: bool,
     pub raw_score: i32,
     pub denovo_score: i32,
@@ -357,7 +357,7 @@ impl<'a> SearchEngine<'a> {
         // --- the per-candidate half: every peptide in the precursor window is a tail lookup ---
         // Identical peptides occurring in several proteins score identically, so they are grouped
         // into one match carrying every protein occurrence — that is what decides decoy status
-        // (`PLAN2.md` §1.3) and stops a repeated peptide consuming the whole top-N list.
+        // (`plans/PLAN2.md` §1.3) and stops a repeated peptide consuming the whole top-N list.
         let mut grouped: HashMap<String, Hit> = HashMap::new();
         let mut buf = ScoreBuffers::default();
         for k in ti_lo..=ti_hi {

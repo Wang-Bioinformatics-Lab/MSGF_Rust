@@ -1,4 +1,4 @@
-//! `PLAN2.md` TD-2 Gate 2: reproduce `edu.ucsd.msjava.fdr.TargetDecoyAnalysis` entry-for-entry.
+//! `plans/PLAN2.md` TD-2 Gate 2: reproduce `edu.ucsd.msjava.fdr.TargetDecoyAnalysis` entry-for-entry.
 //!
 //! The oracle is `validation/golden/fdr/fdrmap_cases.golden.json`, dumped by
 //! `validation/reference/java/DumpFdrMap.java` (regenerate with
@@ -7,7 +7,7 @@
 //! generate it.
 //!
 //! Gate 1 (`golden_fdr.rs`) pins the F13 search columns but only ever sees two distinct q-values
-//! (`PLAN2.md` §4). These 14 synthetic cases are built to separate the rules it cannot see: how a
+//! (`plans/PLAN2.md` §4). These 14 synthetic cases are built to separate the rules it cannot see: how a
 //! run of equal decoy scores is charged, what happens when no target beats a decoy, and whether a
 //! score sitting exactly on a threshold takes that threshold's q-value or the next one's — which
 //! is why every threshold's immediate float neighbours are probed.

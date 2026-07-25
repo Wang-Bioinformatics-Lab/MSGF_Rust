@@ -1,5 +1,5 @@
 //! Target-decoy FASTA construction, byte-compatible with MS-GF+'s `-tda 1`
-//! (`msdbsearch/ReverseDB.java`; see `PLAN2.md` §1.1).
+//! (`msdbsearch/ReverseDB.java`; see `plans/PLAN2.md` §1.1).
 //!
 //! The output is a **concatenated** database: the whole target block, then one decoy per target.
 //! The byte-level rules below were confirmed by reconstructing both reference databases shipped

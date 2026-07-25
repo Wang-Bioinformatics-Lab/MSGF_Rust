@@ -214,7 +214,7 @@ fn search_recovers_known_peptides_with_exact_scores() {
 /// isobaric alternatives (`R.RLTALR.G` vs `R.RIVVSR.G`, both RawScore 16 and the same SpecEValue),
 /// where the choice is an arbitrary tie-break. A further ~1% are scans where we score *higher* than
 /// MS-GF+ — consistent with its two-stage `FastScorer` pre-filter dropping candidates before full
-/// node+edge scoring, which we do not replicate. See `PLAN2.md` §4 for why F13 cannot support an
+/// node+edge scoring, which we do not replicate. See `plans/PLAN2.md` §4 for why F13 cannot support an
 /// ID-count-at-1%-FDR gate.
 #[test]
 #[ignore = "builds a ~48M-candidate index over the human database (~2 GB, ~10 s)"]

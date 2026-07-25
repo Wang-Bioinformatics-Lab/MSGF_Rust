@@ -1,4 +1,4 @@
-//! `PLAN2.md` TD-1 gate: our target-decoy FASTA must be **byte-identical** to the one MS-GF+'s
+//! `plans/PLAN2.md` TD-1 gate: our target-decoy FASTA must be **byte-identical** to the one MS-GF+'s
 //! `-tda 1` produced.
 //!
 //! The reference `.revCat.fasta` files live in the gitignored `validation/data/` (UC-licensed, see

@@ -2,7 +2,7 @@
 
 This is **the test folder**. It exists to prove the Rust port reproduces reference **MS-GF+
 (Java)** numbers, and to catch regressions. The Java implementation is the oracle (see
-`../PLAN.md`, decision D1: exact-reproduction-first).
+`../plans/PLAN.md`, decision D1: exact-reproduction-first).
 
 ## Layout
 

@@ -1,7 +1,7 @@
 # PLAN2 — Target–decoy and FDR
 
 Execution plan for target-decoy analysis (TDA): decoy database construction, PSM/peptide-level
-q-values, and how they wire into the future `msgf-search` engine. Strategy context is `PLAN.md`
+q-values, and how they wire into the future `msgf-search` engine. Strategy context is `plans/PLAN.md`
 (§7 Phase 6 lists "target-decoy FDR" as a single bullet); this doc is the concrete design.
 
 **Status: TD-1, TD-2 (both gates) and TD-3 implemented** (`msgf-db`, `msgf-fdr`, `msgf-search`).
@@ -92,7 +92,7 @@ and q-values are then comparable by exact equality, not tolerance. f64 optional 
 **License note:** decoy generation and the FDR sweep are textbook published methods with no UC
 trained data involved, so this whole workstream is MIT-safe by construction. Only *behavioral*
 compatibility comes from reading the Java — the same posture as the rest of the fidelity work, and
-unrelated to the `.param` model boundary in `PLAN1.md`.
+unrelated to the `.param` model boundary in `plans/PLAN1.md`.
 
 ---
 
@@ -174,7 +174,7 @@ Consequences:
   Java regardless of whether the identifications are biologically real. Nothing already validated
   is affected.
 - It **cannot** support Phase 6's stated gate ("ID counts at 1% FDR comparable to Java MS-GF+",
-  `PLAN.md:250`), nor any end-to-end TDA test: with q ≡ 1 there is nothing to compare.
+  `plans/PLAN.md:250`), nor any end-to-end TDA test: with q ≡ 1 there is nothing to compare.
 - Both the spectra and the FASTA came from msgfplus' own `src/test/resources/iprg-2013/`
   (`fetch_reference_data.sh:39,60`) and the run used `-inst 1 -m 3 -e 1 -t 10ppm -tda 1`, so the
   pairing is presumably intended; why the search identifies essentially nothing is **open**.

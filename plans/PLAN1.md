@@ -2,7 +2,7 @@
 
 Execution plan for the workstream that removes the last licensed dependency from MSGF_Rust's
 scoring path: the trained **fragment-scoring model** (the `.param` files). Strategy and the broader
-retraining picture live in [`docs/models.md`](docs/models.md) (decision **D5**); this doc is the
+retraining picture live in [`docs/models.md`](../docs/models.md) (decision **D5**); this doc is the
 concrete "understand it → isolate it → document it → write code to create it → make our own"
 checklist, with current status.
 
@@ -53,7 +53,7 @@ The remaining tie is that we don't yet *train* a good model; Steps 4–5 close t
 
 ## Step 3 — Document the format ✅
 
-Byte-level spec: **[`docs/param-format.md`](docs/param-format.md)** — endianness, string encoding,
+Byte-level spec: **[`docs/param-format.md`](../docs/param-format.md)** — endianness, string encoding,
 the eight stream sections, the ordering constraints (TreeSet partition order; §6 skips empty
 partitions, §7 doesn't), and the two read-side transforms (derived ion `name`; zero ion-existence
 floored to `0.001`). Validated normative — the writer built from it reproduces all four UC models
@@ -105,7 +105,7 @@ only, so the same corpus reproduces the model byte-for-byte.
 The open unknowns were resolved **without** reading `ScoringParameterGeneratorWithErrors`: the
 statistics are defined from how the scorer consumes each table, then checked against the numbers in
 the shipped models (row sums, absent bins, the nominal-grid offsets). Full write-up, including the
-per-section definitions and the normalisation evidence: **[`docs/training.md`](docs/training.md)**.
+per-section definitions and the normalisation evidence: **[`docs/training.md`](../docs/training.md)**.
 
 ### 5c — Validate the model ◐ (downstream parity measured; mechanics oracle skipped)
 

@@ -1,7 +1,7 @@
 # rust/ — MSGF_Rust workspace
 
 Cargo workspace for the Rust reimplementation of MS-GF+ significance scoring. Every crate is
-validated against the frozen golden corpus in `../validation/` (see `../PLAN.md`).
+validated against the frozen golden corpus in `../validation/` (see `../plans/PLAN.md`).
 
 ```bash
 cargo test --workspace     # unit tests + golden validation against ../validation/golden/

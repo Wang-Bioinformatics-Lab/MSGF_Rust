@@ -6,7 +6,7 @@
 //!   buffer, proteins as offset+length slices), plus the database's amino-acid composition, which
 //!   is what weights the de novo graph's edges.
 //! - [`decoy`] — MS-GF+-compatible target-decoy construction, validated **byte-for-byte** against
-//!   the reference `.revCat.fasta` databases (see `PLAN2.md` §1.1).
+//!   the reference `.revCat.fasta` databases (see `plans/PLAN2.md` §1.1).
 //! - [`enzyme`] — enzymes and in-silico digestion, including semi- and non-enzymatic searches.
 //!
 //! Nothing here depends on a spectrum or a scoring model; the crate has one dependency

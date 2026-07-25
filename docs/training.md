@@ -4,7 +4,7 @@ How MSGF_Rust **produces** a `.param` scoring model of its own, what each traine
 and how the first model — counted from MassIVE-KB (CC0) — compares to the UC-licensed
 `HCD_HighRes_Tryp.param` it is meant to replace.
 
-Companions: `docs/models.md` (why we need our own model — decision **D5**), `PLAN1.md` (the
+Companions: `docs/models.md` (why we need our own model — decision **D5**), `plans/PLAN1.md` (the
 execution plan; this doc closes step **5b** and reports step **5c**), `docs/param-format.md` (the
 container).
 
@@ -143,7 +143,7 @@ Scale of the load-bearing table (charge 2, mass 1200, segment 0):
 The row *scales* agree closely — independent evidence that the normalisation above is the one the
 format intends. The **hit rates do not**, and that is the corpus talking: MassIVE-KB reference
 spectra are consensus spectra, so a real ion series is far more complete there (0.88 of y sites
-matched vs 0.66 in raw data) and a decoy position finds a peak twice as often. `PLAN1.md` §4.2
+matched vs 0.66 in raw data) and a decoy position finds a peak twice as often. `plans/PLAN1.md` §4.2
 predicted exactly this ("consensus spectra have cleaner noise statistics… `noiseFreq[]` will be
 optimistic — fine for a v0"); the number to quote for it is **0.88 vs 0.66**.
 
@@ -206,7 +206,7 @@ per partition. The 0.15-threshold variant, with 5.3, is the one that costs ~7 %.
 3. **Coverage.** Only the HCD/HighRes/Tryptic identity is trained — it is the bundled default, and
    any other acquisition still needs `--param` (MS-GF+'s models remain readable, just not shipped). CID/ETD need c/z candidates
    added to `ions.rs` and a matching corpus; TMT/iTRAQ and non-tryptic need corpora.
-4. **No trainer-mechanics oracle.** `PLAN1.md` 5c-1 wants Java `ScoringParamGen` and `msgf-train`
+4. **No trainer-mechanics oracle.** `plans/PLAN1.md` 5c-1 wants Java `ScoringParamGen` and `msgf-train`
    run on the same small corpus and compared table-for-table. Not done: our statistics are defined
    independently (deliberately — see the clean-room boundary), so the two would not be expected to
    agree bin-for-bin; the meaningful gate is the downstream parity measured above.

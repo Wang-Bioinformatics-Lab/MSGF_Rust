@@ -1,6 +1,6 @@
 //! msgf-train — a clean-room trainer that **produces** a fragment-scoring model (`.param`).
 //!
-//! This is the last piece of the model-ownership plan (`PLAN1.md` step 5): `msgf-scorer` can read
+//! This is the last piece of the model-ownership plan (`plans/PLAN1.md` step 5): `msgf-scorer` can read
 //! and write the format, and this crate fills it with numbers counted from a corpus of confident
 //! peptide-spectrum matches, so MSGF_Rust can ship a model of its own rather than a UC-licensed one.
 //!

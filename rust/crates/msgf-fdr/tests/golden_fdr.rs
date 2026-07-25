@@ -1,4 +1,4 @@
-//! `PLAN2.md` TD-2 Gate 1: reproduce MS-GF+'s `QValue` and `PepQValue` columns exactly.
+//! `plans/PLAN2.md` TD-2 Gate 1: reproduce MS-GF+'s `QValue` and `PepQValue` columns exactly.
 //!
 //! The oracle is `validation/golden/iprg2013_F13.golden.json`. Being MS-GF+-derived it is **not
 //! committed** — regenerate it with `validation/reference/generate_golden.sh` (jar + spectra +
@@ -7,7 +7,7 @@
 //! The golden holds MS-GF+'s `-unroll 1` output: 4133 rows, one per *protein occurrence*. FDR
 //! counts *matches*, so the rows are first rolled back up into 1610 unique PSMs keyed by
 //! `(spec_file, scan, charge, peptide)`, with each match carrying every protein it hit — that list
-//! is what decides decoy status (`PLAN2.md` §1.3: decoy iff **every** occurrence is a decoy).
+//! is what decides decoy status (`plans/PLAN2.md` §1.3: decoy iff **every** occurrence is a decoy).
 
 use msgf_fdr::{is_decoy_match, peptide_key, PsmRecord, TargetDecoyAnalysis};
 use serde_json::Value;
@@ -117,7 +117,7 @@ fn f13_q_values_match_msgfplus() {
     );
 }
 
-/// The F13 corpus is degenerate as an FDR oracle (`PLAN2.md` §4): MS-GF+ itself reports q = 1 for
+/// The F13 corpus is degenerate as an FDR oracle (`plans/PLAN2.md` §4): MS-GF+ itself reports q = 1 for
 /// 4132 of 4133 rows. This test pins that fact so the gate above is never mistaken for proof that
 /// the estimator is right across its range — that needs PLAN2's TD-2 Gate 2 Java probe.
 #[test]

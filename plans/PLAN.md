@@ -97,7 +97,7 @@ model is the *only* UC-encumbered piece on the scoring path; replacing it with o
 **MassIVE-KB (CC0)** is what lets MSGF_Rust go MIT. Adopt the clean-room target: add a
 `ScoringModel` seam behind `node_score()` now, build an `msgf-train` crate, ship a CC0-trained
 `HCD_HighRes_Tryp` first, and keep the UC `.param` path as a permanent test-only oracle. **Full plan
-in [`docs/models.md`](docs/models.md).** *Recommendation: yes — the concrete execution of D1's "A
+in [`docs/models.md`](../docs/models.md).** *Recommendation: yes — the concrete execution of D1's "A
 now, B later."*
 
 ---
@@ -157,7 +157,7 @@ while cross-language golden/regression data lives in a top-level `validation/` t
 
 ```
 MSGF_Rust/
-├── PLAN.md
+├── plans/                     # PLAN.md (this file), PLAN1/2/3
 ├── rust/                      # THE RUST FOLDER — a Cargo workspace
 │   ├── Cargo.toml
 │   ├── crates/
@@ -290,4 +290,4 @@ model — what "training" concretely is (a counting pass), **MassIVE-KB (CC0)** 
 `msgf-train` crate, the `ScoringModel` swap seam, validation by trainer-mechanics oracle +
 ID-count parity, and the milestones to an MIT release — is the dedicated design doc:
 
-**→ [`docs/models.md`](docs/models.md)** (decision **D5**).
+**→ [`docs/models.md`](../docs/models.md)** (decision **D5**).

@@ -1,5 +1,5 @@
 //! msgf-fdr — target-decoy false-discovery-rate estimation, compatible with MS-GF+'s
-//! `fdr/TargetDecoyAnalysis.java` (specified in `PLAN2.md` §1.4).
+//! `fdr/TargetDecoyAnalysis.java` (specified in `plans/PLAN2.md` §1.4).
 //!
 //! The score is **SpecEValue**, smaller-is-better, and all arithmetic is **`f32`** — that is what
 //! the Java oracle emits, so q-values compare by exact equality rather than by tolerance.
@@ -33,7 +33,7 @@
 //!   (`reference/make_fdr_golden.sh`), comparing every map
 //!   entry and every lookup (including each threshold's immediate float neighbours). This is the
 //!   gate that pins the three rules F13 cannot see, because it yields only two distinct q-values
-//!   (`PLAN2.md` §4): the tie rule in step 2, the `target_index == 0` skip, and the step-4 lookup.
+//!   (`plans/PLAN2.md` §4): the tie rule in step 2, the `target_index == 0` skip, and the step-4 lookup.
 
 /// One match, as the FDR sweep sees it.
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ pub struct PsmRecord {
     /// context stripped and upper-cased (see [`peptide_key`]).
     pub peptide: String,
     /// `true` when **every** protein occurrence is a decoy. A peptide shared between a target and
-    /// a decoy protein counts as a target (`PLAN2.md` §1.3).
+    /// a decoy protein counts as a target (`plans/PLAN2.md` §1.3).
     pub is_decoy: bool,
 }
 
@@ -60,7 +60,7 @@ pub fn peptide_key(peptide: &str) -> String {
     core.to_ascii_uppercase()
 }
 
-/// Decide decoy status from a match's full list of protein accessions, per `PLAN2.md` §1.3.
+/// Decide decoy status from a match's full list of protein accessions, per `plans/PLAN2.md` §1.3.
 /// A match with no protein occurrences is not a decoy.
 pub fn is_decoy_match<'a>(proteins: impl IntoIterator<Item = &'a str>, decoy_prefix: &str) -> bool {
     let mut any = false;

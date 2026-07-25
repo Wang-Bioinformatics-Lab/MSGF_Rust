@@ -51,7 +51,7 @@ It independently rediscovers the same ion types MS-GF+ scores, in the same order
 The residual difference is corpus domain, not code: MassIVE-KB reference spectra are *consensus*
 spectra, so a real ion series is more complete there (y-ion hit rate 0.88) than in raw acquisitions
 (0.66), which makes the model's missing-ion penalty slightly harsh on raw data. Training from
-provenance-linked raw spectra is the planned v2 (`PLAN1.md`, milestone M4).
+provenance-linked raw spectra is the planned v2 (`plans/PLAN1.md`, milestone M4).
 
 ## What it is not: a way to reproduce MS-GF+'s output
 

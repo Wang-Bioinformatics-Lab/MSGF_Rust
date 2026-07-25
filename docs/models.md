@@ -1,7 +1,7 @@
 # MS-GF+'s implicit scoring models — inventory, licensing, and the path to our own
 
-**Status:** design doc. Companion to `PLAN.md` (decision **D1** — fidelity strategy — and the new
-decision **D5** below). Read `PLAN.md` §2–4 first for context.
+**Status:** design doc. Companion to `plans/PLAN.md` (decision **D1** — fidelity strategy — and the new
+decision **D5** below). Read `plans/PLAN.md` §2–4 first for context.
 
 ## TL;DR
 
@@ -69,7 +69,7 @@ residues, not licensed data. It affects the SpecEValue *distribution*, not the i
 
 - **Model #1 (`.param`) is the only encumbered piece.** It is Copyright The Regents of the
   University of California, licensed for educational/research/non-profit use with attribution;
-  commercial use needs a UCSD Tech-Transfer agreement. Not OSI. (`validation/README.md`, `PLAN.md`
+  commercial use needs a UCSD Tech-Transfer agreement. Not OSI. (`validation/README.md`, `plans/PLAN.md`
   §2.3.)
 - **We already avoid vendoring it** — it is gitignored, never committed, re-fetched on demand
   (`fetch_reference_data.sh`). The committed golden JSON is *derived numeric facts* used as a test
@@ -78,7 +78,7 @@ residues, not licensed data. It affects the SpecEValue *distribution*, not the i
   produce its numbers, MSGF_Rust cannot be released under MIT. **This was the single release
   blocker; it is now cleared** — `msgf-scorer` ships a MassIVE-KB-trained model as the default
   (2026-07-24), and the UC `.param` path is validation-only. See `LICENSING.md`.
-- **The fix** (already the stated intent in `PLAN.md` D1/§8): *keep the model layer swappable and
+- **The fix** (already the stated intent in `plans/PLAN.md` D1/§8): *keep the model layer swappable and
   move to a model we train ourselves.* This doc makes that concrete.
 
 ---
@@ -252,7 +252,7 @@ Each ends at a gate; ordered so value lands early and the release blocker clears
 
 ---
 
-## 6. Decision to record in PLAN.md
+## 6. Decision to record in plans/PLAN.md
 
 **D5 — Own-model / retraining path.** Adopt the **Level-2 clean-room** target with **MassIVE-KB
 (CC0)** as the first corpus and **`HCD_HighRes_Tryp`** as the first retrained identity. Introduce

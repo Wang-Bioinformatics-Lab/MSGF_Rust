@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# make_fdr_golden.sh -- build the TARGET-DECOY FDR oracle (PLAN2.md TD-2 "Gate 2").
+# make_fdr_golden.sh -- build the TARGET-DECOY FDR oracle (plans/PLAN2.md TD-2 "Gate 2").
 #
 # The F13 search golden already pins MS-GF+'s QValue/PepQValue columns end-to-end, but it only
-# produces two distinct q-values (PLAN2.md section 4), so it cannot separate implementations that
+# produces two distinct q-values (plans/PLAN2.md section 4), so it cannot separate implementations that
 # differ in tie handling, in the `targetIndex > 0` guard, or in the map-lookup rule. DumpFdrMap.java
 # drives edu.ucsd.msjava.fdr.TargetDecoyAnalysis directly on small synthetic score lists chosen to
 # separate exactly those behaviours, and freezes the map plus the lookups (including each key's

@@ -62,7 +62,7 @@
 //! | [`search`] | `msgf-search` | candidate index and the search driver |
 //!
 //! The scoring path is a linear chain — `io → scorer → genfunc` — with `chem` underneath all of it.
-//! `PLAN.md` in the repository has the design and `CLAUDE.md` the fidelity contract: integer scores
+//! `plans/PLAN.md` in the repository has the design and `CLAUDE.md` the fidelity contract: integer scores
 //! must match MS-GF+ **exactly**, SpecEValue within `|log10(rust/java)| ≤ 0.05`.
 
 pub use msgf_chem as chem;

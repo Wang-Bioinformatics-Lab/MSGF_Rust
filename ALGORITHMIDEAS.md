@@ -3,9 +3,17 @@
 This file is the index for algorithm and performance research. Detailed measurements, rejected
 approaches, implementation notes, and reproduction commands belong under [`research-trials/`](research-trials/).
 
+The **plan** these trials feed is [`plans/PLAN3.md`](plans/PLAN3.md) — spectral p-value acceleration
+(5–10× on the significance stage): what to build, in what order, and the acceptance gates. This file
+records what was measured; PLAN3 records what to do about it.
+
 ## Generating Function and Scoring Pipeline
 
-See the [full optimization trial report](research-trials/generating-function-optimization.md).
+See the [full optimization trial report](research-trials/generating-function-optimization.md), the
+per-trial data behind it ([node tables](research-trials/spec-tables-node-scoring.md),
+[saddlepoint tuning](research-trials/saddlepoint-tuning-data.md)), and
+[measurement traps](research-trials/measurement-traps.md) — read that last one before designing a new
+benchmark here.
 
 | Idea or trial | Fidelity | Status | Key result |
 |---|---|---|---|

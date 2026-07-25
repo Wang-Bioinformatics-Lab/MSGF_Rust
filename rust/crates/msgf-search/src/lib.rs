@@ -24,7 +24,7 @@
 //! ```
 //!
 //! Step 3 is deliberately separate and serial: FDR is a property of the whole result set, so it is
-//! an epilogue to the parallel search (`PLAN2.md` §TD-3).
+//! an epilogue to the parallel search (`plans/PLAN2.md` §TD-3).
 //!
 //! The generating function is built **once per `(spectrum, charge)`** and shared by every candidate
 //! in the precursor window — see [`search`] for the details and for the two documented divergences
@@ -45,7 +45,7 @@ use msgf_fdr::{PsmRecord, TargetDecoyAnalysis};
 ///
 /// FDR is global, so this must see the **whole** result set at once — call it after every spectrum
 /// has been searched, never per spectrum. Decoy status is already decided per match from all of its
-/// protein occurrences (`PLAN2.md` §1.3).
+/// protein occurrences (`plans/PLAN2.md` §1.3).
 ///
 /// A search over a database with no decoys yields q-values of 0; that is not an FDR estimate, and
 /// [`has_decoys`] lets a caller detect and say so.

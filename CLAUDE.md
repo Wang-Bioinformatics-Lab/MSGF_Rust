@@ -7,19 +7,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A Rust reimplementation of **MS-GF+ significance scoring** — the generating-function spectral
 E-value (SpecEValue) for high-resolution tandem MS — validated to be **bit-exact** against the
 reference Java MS-GF+ (`github.com/MSGFPlus/msgfplus`). The Java implementation is the numeric
-**oracle**: every crate is checked against frozen "golden" outputs derived from it. A
-Sage-inspired database search engine (`msgf-search`) is a later phase and does not exist yet.
+**oracle**: every crate is checked against frozen "golden" outputs derived from it. A database
+search engine (`msgf-search`) is built on top of that core and validated against MS-GF+ on F13;
+candidates come from a mass-sorted peptide index, not the fragment index Sage uses.
 
-Two workstreams are live: **fidelity/performance** of the scoring path, and **model ownership** —
-removing the last UC-licensed dependency (the trained `.param` model) so the project can ship MIT.
+Three workstreams are live: **fidelity/performance** of the scoring path (`plans/PLAN3.md` is the
+current perf plan), **model ownership** — removing the last UC-licensed dependency (the trained
+`.param` model) so the project can ship MIT — and **search/FDR** hardening (`plans/PLAN2.md` §4).
 
 Doc map — read the relevant one before substantial work:
 
 | Doc | What it is |
 |---|---|
-| `PLAN.md` | authoritative design doc: phases, decisions (D1–D5), algorithm derivation |
-| `PLAN1.md` | the model-ownership execution plan (own the `.param` → train our own), with status |
-| `PLAN2.md` | target-decoy + FDR: decoy FASTA, q-values, `msgf-search` wiring; normative MS-GF+ TDA semantics |
+| `plans/PLAN.md` | authoritative design doc: phases, decisions (D1–D5), algorithm derivation |
+| `plans/PLAN1.md` | the model-ownership execution plan (own the `.param` → train our own), with status |
+| `plans/PLAN2.md` | target-decoy + FDR: decoy FASTA, q-values, `msgf-search` wiring; normative MS-GF+ TDA semantics |
+| `plans/PLAN3.md` | spectral p-value acceleration (5–10× on the significance stage): exact DP work, gates, cascade |
+| `plans/PLAN4.md` | desktop UI: a zero-dependency loopback web server (`msgf ui`) with an embedded front-end |
+| `plans/PLAN5.md` | Nextflow scale-out: scatter on spectra, gather FDR; why the database must never be split |
+| `plans/PLAN6.md` | timsTOF (Bruker `.d`) DDA support: direct reader, fragment tolerance, a TOF-trained model |
+| `ALGORITHMIDEAS.md` + `research-trials/` | index and detailed reports for algorithm/perf experiments — PLAN3's evidence |
 | `docs/models.md` | the two trained/implicit models, what taints what, plan to retrain (decision D5) |
 | `docs/training.md` | how `msgf-train` counts a `.param` from a corpus + how the MassIVE-KB model compares to UC's |
 | `LICENSING.md` | what the repo ships vs. fetches, why it is MIT-clean, and the clean-room boundary |
@@ -41,15 +48,23 @@ cargo clippy --workspace --all-targets
 cargo fmt --all
 cargo bench -p msgf-genfunc --bench genfunc   # SpecEValue DP, 1-core + 32-core (rayon)
 cargo bench -p msgf-scorer  --bench scoring   # scored-spectrum sub-components
+
+# The F13 end-to-end search oracle is #[ignore]d (~48M-candidate index over the human DB, ~2 GB):
+cargo test -p msgf-search --release -- --ignored --nocapture
 ```
 
-The `msgf` binary (crate `msgf-cli`) — `rescore` is the only subcommand; it recomputes
-RawScore/DeNovoScore/SpecEValue for a supplied PSM list (it is *not* a database search):
+The `msgf` binary (crate `msgf-cli`) has four subcommands — `search`, `rescore`, `decoy`, `fdr`.
+Full flags live in each subcommand's `USAGE` const (`msgf-cli/src/<subcommand>.rs`); `msgf
+<cmd> --help` prints it. **Omitting `--param` silently uses the bundled MassIVE-KB model**, which is
+a different scoring function from MS-GF+'s — always pass `--param` when comparing to Java:
 
 ```bash
+cargo run -p msgf-cli --release -- search -s run.mgf -d human.revCat.fasta \
+  --fixed-mod C+57.021464 --var-mod M+15.994915 -t 10ppm -o psms.tsv
+cargo run -p msgf-cli --release -- decoy -d human.fasta -o human.revCat.fasta
 cargo run -p msgf-cli --release -- rescore \
   --spectra spectra.mgf --param HCD_HighRes_Tryp.param --psms psms.tsv [--ti 0,1] [--aa-probs f.tsv]
-cargo run -p msgf-cli -- --help          # full flag list lives in main.rs USAGE
+cargo run -p msgf-cli --release -- fdr -i rescored.tsv -o rescored.q.tsv
 ```
 
 Training a scoring model of our own (crate `msgf-train`; corpus = annotated MGF with `SEQ=`):
@@ -109,15 +124,21 @@ the boundary by building and scoring a model with zero fetched bytes; keep it pa
 
 The scoring pipeline is a linear dependency chain (a spectrum + candidate peptide → SpecEValue).
 Each crate is validated independently against its own golden family before the next builds on it.
+The search engine is a second layer that drives that chain over database candidates.
 
 ```
-msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc  ──►  msgf-cli
-              ▲
-        msgf-train (counts a .param from annotated spectra — the model we own)
-(MGF read)   (.param model +    (de novo graph + score-      (the `msgf` binary:
-              scored spectrum)   distribution DP → SpecEValue)  rescore)
-                                        ↑ hot core
-   msgf-chem  (masses, residues, fragment ions, tolerance, mass-grid scaling) — used by all
+scoring core:   msgf-io ──► msgf-scorer ──► msgf-genfunc ─┐
+                (MGF read)  (.param model +  (de novo graph + DP  │
+                             scored spectrum)  → SpecEValue)      │  ↑ hot core
+                                  ▲                               │
+                            msgf-train (counts a .param we own)   │
+                                                                  ▼
+search layer:   msgf-db ──────────────────► msgf-search ──► msgf-fdr
+                (FASTA, decoys, digestion)   (index + engine)  (q-values)
+                                                                  │
+                msgf-chem (masses, ions, tolerance, mass-grid scaling) — used by all
+                                                                  ▼
+                    msgf (one-dependency facade)   msgf-cli (the `msgf` binary)
 ```
 
 - **`msgf-chem`** — atomic/residue/peptide masses, b/y ions, tolerance, and the two mass-grid
@@ -148,9 +169,23 @@ msgf-io  ──►  msgf-scorer  ──►  msgf-genfunc  ──►  msgf-cli
   `docs/param-format.md`, never transcribed from MS-GF+'s `ScoringParameterGeneratorWithErrors`;
   `tests/train_smoke.rs` trains + scores from a synthetic corpus with zero fetched bytes. Read
   `docs/training.md` before touching the counting definitions.
-- **`msgf-cli`** — the `msgf` binary. `rescore` caches one generating function per `(scan, charge)`
-  and turns each PSM into a RawScore + tail lookup; `tests/golden_rescore.rs` checks the binary
-  end-to-end against MS-GF+ on F13.
+- **`msgf-db`** — FASTA into a flat `ProteinDb` (one buffer, proteins as offset+length), the
+  database's amino-acid composition (this is what weights the de novo graph's edges), enzymes and
+  digestion, and MS-GF+-compatible decoy construction validated **byte-for-byte** against reference
+  `.revCat.fasta`. Note `DigestParams` defaults to MS-GF+'s **unlimited** missed cleavages.
+- **`msgf-fdr`** — target-decoy q-values mirroring `TargetDecoyAnalysis.java`. All arithmetic is
+  **`f32`** because that is what Java emits, so q-values compare by *exact equality*. The lookup is
+  Java's `TreeMap.higherEntry` (least key strictly greater). Its rules are subtle — the crate doc
+  is normative; read it before touching the sweep.
+- **`msgf-search`** — the engine. `PeptideIndex::build` generates mass-sorted modified candidates,
+  `SearchEngine::run` scores in parallel (rayon), `assign_q_values` is a deliberately serial
+  epilogue (FDR is a property of the whole result set). The generating function is built once per
+  `(spectrum, charge)` and shared by every candidate in the precursor window.
+- **`msgf`** — a facade re-exporting the workspace under short module names so downstreams take one
+  dependency. `default-features = false` drops the search layer and its rayon dependency.
+- **`msgf-cli`** — the `msgf` binary; one module per subcommand. `rescore` caches one generating
+  function per `(scan, charge)` and turns each PSM into a RawScore + tail lookup;
+  `tests/golden_rescore.rs` checks the binary end-to-end against MS-GF+ on F13.
 
 ### Why the generating function is the whole point
 
@@ -158,7 +193,7 @@ The DP `ScoreDist[m] = Σ_aa shift(ScoreDist[m − massBin(aa)], by s(m)) · fre
 the spectrum + precursor mass, not on any candidate peptide** — so it is built **once per spectrum**
 and every PSM becomes a cheap tail lookup. The high-res mass grid is ~274× finer than nominal
 (~1.1M nodes vs ~4k), so this inner loop dominates runtime and is the main optimization target. See
-`PLAN.md` §4 for the derivation and `PERFORMANCE.md` for what has already been done (CSR graph +
+`plans/PLAN.md` §4 for the derivation and `PERFORMANCE.md` for what has already been done (CSR graph +
 arena, hoisted per-spectrum score tables, O(1) peak bucket index, shared node tables across the two
 isotope-error graphs, AVX convolution kernel) — check there before "optimizing" something twice.
 
@@ -187,6 +222,17 @@ When changing scoring, preprocessing, or the DP, the bar is
 `.param` decode) matters more than idiomatic Rust. If you must diverge from the Java algorithm,
 that is a deliberate, reviewed change — flag it, don't silently "improve" it.
 
+**Two divergences are already deliberate** (documented at the top of `msgf-search/src/search.rs`) —
+don't "fix" them without reading that doc: cleavage scoring is applied for C-terminal enzymes only
+(disabled, with a warning, for Lys-N/Asp-N/unspecific, where MS-GF+ builds the graph in the other
+direction), and `EValue = SpecEValue × database size` rather than MS-GF+'s internal candidate-count
+estimate. Q-values come from SpecEValue, so the E-value scaling does not touch FDR.
+
+**F13 is a scoring oracle, not an FDR oracle.** MS-GF+'s own F13 output has `QValue == 1.0` for
+4132 of 4133 rows and its top hits are R/K-rich junk (`plans/PLAN2.md` §4 measures this). Per-PSM
+score comparisons against it are valid; any gate phrased as "IDs at 1% FDR" is not — there is
+nothing to compare. Don't build one on F13; the benchmark question is open.
+
 This binds optimizations too: every perf change so far is bit-exact, and the vectorized DP kernel
 must stay byte-identical to the scalar one. That is why `axpy_avx` does a packed multiply then a
 packed add and **never** an FMA — contraction would change the result. Anything that reassociates
@@ -196,3 +242,9 @@ speedup.
 Golden generators live in `validation/reference/` (Python for no-Java fixtures; `*.java` dumpers +
 `generate_golden.sh` for JVM-derived ones). Regenerating goldens is a deliberate action, never a
 side effect of a code change.
+
+## Conventions
+
+`AGENTS.md` carries the repo's commit/PR conventions: scoped Conventional Commit subjects
+(`perf(genfunc): …`, `fix(search): …`), and PRs that name the affected crates, the validation
+commands run, and any numeric/performance impact.
