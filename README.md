@@ -99,9 +99,9 @@ Three defaults are worth knowing:
   nothing UC-licensed on the path. Pass `--param` for another activation/instrument/enzyme.
   **This is not the model the bit-exactness claims are measured with** — those use MS-GF+'s
   `HCD_HighRes_Tryp.param`. A different model is a different scoring function, so the default
-  produces different peptides and SpecEValues (on F13, the same top peptide as MS-GF+ on 66.6 % of
-  scans, vs 92.7 % with MS-GF+'s model). It benchmarks competitively on held-out ground truth — it
-  is simply not a drop-in for reproducing MS-GF+ output. If that is your goal, pass `--param`.
+  ranks candidates differently and is not a drop-in for reproducing MS-GF+ output; pass `--param`
+  if that is your goal. Different is not worse: on held-out ground truth the two models rank the
+  true peptide above mass-identical decoys equally often (0.9988 vs 0.9988).
   [Details and numbers.](rust/crates/msgf-scorer/models/README.md)
 - **Missed cleavages are unlimited**, matching MS-GF+'s own default (`-maxMissedCleavages` has no
   limit there). This makes the index much larger; pass `-c 2` for a conventional search.
@@ -190,10 +190,13 @@ start of every run so results stay traceable. Provenance and how it compares to 
 > **Which model you pass decides whether output is comparable to MS-GF+.** The fidelity results
 > quoted throughout this README — RawScore/DeNovoScore exact, SpecEValue within `|log10| ≤ 0.05` —
 > are measured with MS-GF+'s `HCD_HighRes_Tryp.param`. The bundled default is a *different* trained
-> model, so it scores differently by construction: on F13 it agrees with MS-GF+ on the top peptide
-> for 66.6 % of scans against 92.7 % for MS-GF+'s model, and reports 609 target PSMs against 624.
-> That is a divergence measurement, not a quality one — on held-out MassIVE-KB ground truth the two
-> models are within 0.3 % on IDs (1480 vs 1485) with Spearman ρ = 0.94 on log₁₀ SpecEValue.
+> model, so it ranks candidates differently by construction and will not reproduce MS-GF+'s output.
+>
+> **That is a difference, not an error.** On 4,000 held-out MassIVE-KB spectra with ground-truth
+> peptides, both models rank the true peptide above 5 mass-identical shuffled decoys **0.9988** of
+> the time — identically — at 3919 vs 3939 IDs on a 1 %-decoy threshold (ρ = 0.973 on log₁₀
+> SpecEValue). Where the two disagree on a real search there is usually no right answer to be had:
+> on F13, MS-GF+'s own top hits are 50.0 % decoy, i.e. exactly chance.
 > Use `--param` to reproduce MS-GF+; use the default to run MSGF_Rust as its own engine.
 
 Pass `--param` when your data is not high-resolution HCD tryptic. MS-GF+'s own models
