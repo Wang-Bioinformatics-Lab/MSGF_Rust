@@ -406,7 +406,7 @@ pub fn read_param_file<P: AsRef<Path>>(path: P) -> Result<ScoringModel, ParamErr
 
 impl RankDist {
     /// Frequency row for an ion by name (`None` if the ion is not scored in this partition).
-    fn row(&self, name: &str) -> Option<&[f32]> {
+    pub(crate) fn row(&self, name: &str) -> Option<&[f32]> {
         self.ions
             .iter()
             .find(|(n, _)| n == name)
@@ -450,6 +450,39 @@ impl ScoringModel {
     /// Mirrors `NewRankScorer.getMissingIonScore`.
     pub fn missing_ion_score(&self, partition_index: usize, ion: &FragOff) -> f32 {
         self.score_from_table(partition_index, ion, self.max_rank as usize)
+    }
+
+    /// Append every distinct [`Self::score_from_table`] result for one `(partition, ion)` to `out`,
+    /// in rank-bin order: bin `r - 1` is rank `r`, and the last bin (`max_rank`) is the missing-ion
+    /// score.
+    ///
+    /// This resolves the partition's rank distribution and the ion's row **once**, where
+    /// `score_from_table` repeats a linear scan over every partition's rank distribution and a
+    /// name-string row search on each call. The arithmetic per bin is character-for-character the
+    /// same, so the values are bit-identical.
+    ///
+    /// Returns `false`, appending nothing, when the partition has no rank distribution or the ion
+    /// has no row — the cases `score_from_table` panics on. Callers can then fall back to it and
+    /// preserve that panic.
+    pub fn extend_score_bins(
+        &self,
+        partition_index: usize,
+        ion: &FragOff,
+        out: &mut Vec<f32>,
+    ) -> bool {
+        let Some(rd) = self.rank_dist_for(partition_index) else {
+            return false;
+        };
+        let Some(ion_row) = rd.row(&ion.name) else {
+            return false;
+        };
+        let noise_row = rd.noise_row();
+        let charge_factor = ion.charge.min(self.num_segments) as f32;
+        for bin in 0..=(self.max_rank.max(0) as usize) {
+            let noise = noise_row[bin] * charge_factor;
+            out.push(((ion_row[bin] / noise) as f64).ln() as f32);
+        }
+        true
     }
 
     /// `log( ionFreq[idx] / (noiseFreq[idx] * min(ionCharge, numSegments)) )`, computed in the
