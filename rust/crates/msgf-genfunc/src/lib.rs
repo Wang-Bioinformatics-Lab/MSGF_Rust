@@ -315,6 +315,47 @@ impl NodeDist {
     };
 }
 
+/// One incoming edge of the node currently being relaxed, fully resolved: the arena range of the
+/// predecessor distribution, its score origin, the shift this edge applies, and the amino-acid
+/// probability. See [`MAX_FUSED_IN`] for why these are cached.
+#[derive(Clone, Copy)]
+struct EdgeDesc {
+    /// Arena offset of the predecessor's distribution (`NodeDist::start`).
+    src_start: u32,
+    /// Length of the predecessor's distribution (`NodeDist::len`, always non-zero here).
+    src_len: u32,
+    /// Score of the predecessor's first cell (`NodeDist::min_score`).
+    src_min: i32,
+    /// `node_score + edge_score` — what the convolution shifts by.
+    score_diff: i32,
+    /// The edge's amino-acid probability (`Graph::edge_prob`).
+    prob: f64,
+}
+
+impl EdgeDesc {
+    const ZERO: EdgeDesc = EdgeDesc {
+        src_start: 0,
+        src_len: 0,
+        src_min: 0,
+        score_diff: 0,
+        prob: 0.0,
+    };
+}
+
+/// How many incoming edges the DP will cache on the stack between its two passes over a node.
+///
+/// The DP visits each incoming edge twice — once to compute the destination's score range, once to
+/// convolve — and both passes gather the same `NodeDist` (a scattered load, indexed by
+/// `edge_prev`) and re-derive the same `node_score + edge_score`. Caching the resolved descriptors
+/// during the range pass lets the convolution run straight off the stack, removing the second
+/// gather and the re-derivation. This changes *which loads happen*, never the arithmetic: the same
+/// edges are convolved in the same order with the same `score_diff` and `prob`.
+///
+/// A de novo graph node has one incoming edge per amino acid (20 standard + modified forms), so 32
+/// covers every realistic model. A node with more falls back to the original two-pass code rather
+/// than growing the array or allocating.
+const MAX_FUSED_IN: usize = 32;
+
 /// Reusable scratch for the DP: an arena backing every intermediate node distribution, so a whole
 /// spectrum's generating function does **no per-node allocation**. Create once and reuse across
 /// candidate masses and spectra (one instance per thread); [`compute`] allocates a throwaway one.
@@ -609,27 +650,45 @@ fn compute_inner<const PRUNED: bool>(
     #[cfg(target_arch = "x86_64")]
     if is_x86_feature_detected!("avx") {
         // Safety: guarded by the feature detection above.
-        return unsafe { dp_avx::<PRUNED>(sc, graph, sinks, cleavage, prune) };
+        return unsafe { dp_avx::<PRUNED, true>(sc, graph, sinks, cleavage, prune) };
     }
-    dp::<false, PRUNED>(sc, graph, sinks, cleavage, prune)
+    dp::<false, PRUNED, true>(sc, graph, sinks, cleavage, prune)
 }
 
-/// The AVX instantiation. `#[target_feature]` here is what lets the kernel inline into the edge
-/// loop; the body is the same [`dp`] the portable path runs, so the two stay bit-identical.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx")]
-unsafe fn dp_avx<const PRUNED: bool>(
+/// The pre-fusion two-pass DP, kept callable so `fused_edge_pass_is_bit_exact` has something to
+/// compare against. Test-only: release builds never instantiate `FUSE = false`.
+#[cfg(test)]
+fn compute_inner_unfused<const PRUNED: bool>(
     sc: &mut DpScratch,
     graph: &Graph,
     sinks: &[usize],
     cleavage: Option<Cleavage>,
     prune: Option<Prune>,
 ) -> Option<GenFunc> {
-    dp::<true, PRUNED>(sc, graph, sinks, cleavage, prune)
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx") {
+        // Safety: guarded by the feature detection above.
+        return unsafe { dp_avx::<PRUNED, false>(sc, graph, sinks, cleavage, prune) };
+    }
+    dp::<false, PRUNED, false>(sc, graph, sinks, cleavage, prune)
+}
+
+/// The AVX instantiation. `#[target_feature]` here is what lets the kernel inline into the edge
+/// loop; the body is the same [`dp`] the portable path runs, so the two stay bit-identical.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn dp_avx<const PRUNED: bool, const FUSE: bool>(
+    sc: &mut DpScratch,
+    graph: &Graph,
+    sinks: &[usize],
+    cleavage: Option<Cleavage>,
+    prune: Option<Prune>,
+) -> Option<GenFunc> {
+    dp::<true, PRUNED, FUSE>(sc, graph, sinks, cleavage, prune)
 }
 
 #[inline(always)]
-fn dp<const AVX: bool, const PRUNED: bool>(
+fn dp<const AVX: bool, const PRUNED: bool, const FUSE: bool>(
     sc: &mut DpScratch,
     graph: &Graph,
     sinks: &[usize],
@@ -693,6 +752,10 @@ fn dp<const AVX: bool, const PRUNED: bool>(
         len: 1,
     };
 
+    // Scratch for the fused edge pass, hoisted out of the node loop so no node pays to initialize
+    // it. Written by the score-range pass, read by the convolution; see [`MAX_FUSED_IN`].
+    let mut descs = [EdgeDesc::ZERO; MAX_FUSED_IN];
+
     for i in 1..n {
         // Cheapest possible rejection: this node is on no path that can clear the threshold, so
         // none of its ~21 edges need to be looked at.
@@ -711,16 +774,44 @@ fn dp<const AVX: bool, const PRUNED: bool>(
         // per candidate, so it is zeroed here rather than baked into the (shared) edge array.
         let is_sink = sinks.contains(&i);
 
-        // Score range of this node's distribution, from its reachable predecessors.
+        // Score range of this node's distribution, from its reachable predecessors. When the node's
+        // in-degree fits, this pass also records each live edge's resolved descriptor so the
+        // convolution below never has to gather `sc.dists[edge_prev[e]]` a second time. The
+        // descriptors are appended in `e0..e1` order and skip exactly the edges the convolution
+        // skips (`pd.len == 0`), so the convolution's edge order — and therefore its summation
+        // order — is unchanged.
+        let fused = FUSE && e1 - e0 <= MAX_FUSED_IN;
+        let mut n_desc = 0usize;
         let (mut cur_min, mut cur_max) = (i32::MAX, i32::MIN);
-        for e in e0..e1 {
-            let pd = sc.dists[graph.edge_prev[e] as usize];
-            if pd.len == 0 {
-                continue;
+        if fused {
+            for e in e0..e1 {
+                let pd = sc.dists[graph.edge_prev[e] as usize];
+                if pd.len == 0 {
+                    continue;
+                }
+                let combined = node_score + if is_sink { 0 } else { graph.edge_score[e] };
+                cur_min = cur_min.min(pd.min_score + combined);
+                cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
+                // `n_desc <= e - e0 < MAX_FUSED_IN` by the `fused` guard.
+                descs[n_desc] = EdgeDesc {
+                    src_start: pd.start,
+                    src_len: pd.len,
+                    src_min: pd.min_score,
+                    score_diff: combined,
+                    prob: graph.edge_prob[e],
+                };
+                n_desc += 1;
             }
-            let combined = node_score + if is_sink { 0 } else { graph.edge_score[e] };
-            cur_min = cur_min.min(pd.min_score + combined);
-            cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
+        } else {
+            for e in e0..e1 {
+                let pd = sc.dists[graph.edge_prev[e] as usize];
+                if pd.len == 0 {
+                    continue;
+                }
+                let combined = node_score + if is_sink { 0 } else { graph.edge_score[e] };
+                cur_min = cur_min.min(pd.min_score + combined);
+                cur_max = cur_max.max(pd.min_score + pd.len as i32 + combined);
+            }
         }
         // Raise the floor to the lowest score that can still reach `cut` (see `compute_tail_into`).
         // `max_rem[i] == i32::MIN` means no sink lies beyond this node, so it is dropped entirely.
@@ -754,6 +845,27 @@ fn dp<const AVX: bool, const PRUNED: bool>(
             let cur = &mut cur_part[..len];
             // Two monomorphizations of one loop: `CLIP` is a compile-time constant inside it, so
             // the overlap arithmetic disappears entirely from the common (unclipped) case.
+            //
+            // `relax_fused` consumes the descriptors the range pass already resolved; `relax`
+            // is the fallback for a node whose in-degree exceeded `MAX_FUSED_IN`. Both issue the
+            // same `axpy_edge` calls, in the same order, with the same arguments.
+            macro_rules! relax_fused {
+                ($clip:expr) => {
+                    for d in &descs[..n_desc] {
+                        let src_start = d.src_start as usize;
+                        let src_len = d.src_len as usize;
+                        debug_assert!(src_start + src_len <= prev_part.len());
+                        // Safety: every `NodeDist` is recorded immediately after its arena range is
+                        // appended, and predecessor ranges are wholly before `start`. The
+                        // descriptor was copied from such a `NodeDist` earlier in this iteration,
+                        // and the arena has not been resized since the split.
+                        let src = unsafe {
+                            std::slice::from_raw_parts(prev_part.as_ptr().add(src_start), src_len)
+                        };
+                        axpy_edge::<AVX, $clip>(cur, cur_min, src, d.src_min, d.score_diff, d.prob);
+                    }
+                };
+            }
             macro_rules! relax {
                 ($clip:expr) => {
                     for e in e0..e1 {
@@ -781,10 +893,11 @@ fn dp<const AVX: bool, const PRUNED: bool>(
                     }
                 };
             }
-            if clipped {
-                relax!(true)
-            } else {
-                relax!(false)
+            match (fused, clipped) {
+                (true, true) => relax_fused!(true),
+                (true, false) => relax_fused!(false),
+                (false, true) => relax!(true),
+                (false, false) => relax!(false),
             }
         }
 
@@ -950,11 +1063,104 @@ mod tests {
         Graph::from_adj(&nodes)
     }
 
+    /// Like [`random_graph`] but with in-degrees straddling [`MAX_FUSED_IN`], so both the fused
+    /// edge pass and its wide-node fallback run in the same graph.
+    fn wide_random_graph(seed: u64, n: usize) -> Graph {
+        let mut s = seed.wrapping_mul(6364136223846793005).wrapping_add(7);
+        let mut next = move || {
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (s >> 33) as i64
+        };
+        let nodes: Vec<AdjNode> = (0..n)
+            .map(|i| {
+                let ns = if i == 0 { 0 } else { (next() % 21) as i32 - 10 };
+                let mut edges = Vec::new();
+                if i > 0 {
+                    for back in 1..=40usize.min(i) {
+                        if next() % 8 == 0 {
+                            continue;
+                        }
+                        edges.push((i - back, (next() % 17) as i32 - 8, 0.05));
+                    }
+                }
+                (ns, edges)
+            })
+            .collect();
+        Graph::from_adj(&nodes)
+    }
+
     const CLEAVE: Cleavage = Cleavage {
         credit: 2,
         penalty: -11,
         prob_cleavage_sites: 0.1,
     };
+
+    fn assert_same_gf(a: &GenFunc, b: &GenFunc, what: &str) {
+        assert_eq!(a.dist.min_score, b.dist.min_score, "{what}: min_score");
+        assert_eq!(a.dist.probs.len(), b.dist.probs.len(), "{what}: len");
+        for (i, (p, q)) in a.dist.probs.iter().zip(&b.dist.probs).enumerate() {
+            assert_eq!(p.to_bits(), q.to_bits(), "{what}: cell {i}");
+        }
+        assert_eq!(a.denovo, b.denovo, "{what}: denovo");
+        assert_eq!(a.valid_from, b.valid_from, "{what}: valid_from");
+        assert_eq!(a.err_bound.to_bits(), b.err_bound.to_bits(), "{what}: err");
+    }
+
+    /// Caching each edge's resolved descriptor during the score-range pass removes the convolution
+    /// pass's second `NodeDist` gather. It must remove **only loads**: the same edges, in the same
+    /// order, with the same `score_diff` and `prob`, hence bit-identical `f64` output. Compared
+    /// against the pre-fusion two-pass body (`FUSE = false`), which is kept callable for exactly
+    /// this. Covers unpruned and pruned, both in-degree regimes, both cleavage settings.
+    #[test]
+    fn fused_edge_pass_is_bit_exact() {
+        let (mut a, mut b) = (DpScratch::default(), DpScratch::default());
+        let mut saw_wide = false;
+        let mut saw_narrow = false;
+        for seed in 0..25u64 {
+            for wide in [false, true] {
+                let g = if wide {
+                    wide_random_graph(seed, 90)
+                } else {
+                    random_graph(seed, 90)
+                };
+                let sinks = [89usize];
+                for i in 1..g.n_nodes() {
+                    let deg = g.edge_start[i + 1] - g.edge_start[i];
+                    if deg as usize > MAX_FUSED_IN {
+                        saw_wide = true;
+                    } else if deg > 0 {
+                        saw_narrow = true;
+                    }
+                }
+                for cleavage in [None, Some(CLEAVE)] {
+                    let x = compute_inner::<false>(&mut a, &g, &sinks, cleavage, None);
+                    let y = compute_inner_unfused::<false>(&mut b, &g, &sinks, cleavage, None);
+                    match (&x, &y) {
+                        (Some(x), Some(y)) => assert_same_gf(x, y, &format!("full seed {seed}")),
+                        (None, None) => continue,
+                        _ => panic!("seed {seed}: reachability disagreed"),
+                    }
+                    let denovo = x.as_ref().unwrap().max_score();
+                    for t in [denovo - 30, denovo - 12, denovo - 3, denovo + 1] {
+                        let p = Some(Prune::exact(t));
+                        let px = compute_inner::<true>(&mut a, &g, &sinks, cleavage, p);
+                        let py = compute_inner_unfused::<true>(&mut b, &g, &sinks, cleavage, p);
+                        match (&px, &py) {
+                            (Some(px), Some(py)) => {
+                                assert_same_gf(px, py, &format!("pruned seed {seed} t {t}"))
+                            }
+                            (None, None) => {}
+                            _ => panic!("seed {seed} t {t}: reachability disagreed"),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(saw_narrow, "no node exercised the fused path");
+        assert!(saw_wide, "no node exercised the wide-node fallback");
+    }
 
     /// Threshold pruning must reproduce the unpruned tail **bit for bit**, not approximately.
     #[test]
@@ -1030,8 +1236,8 @@ mod tests {
             let g = random_graph(seed, 90);
             let sinks = [89usize];
             // Safety: AVX confirmed present above.
-            let x = unsafe { dp_avx::<false>(&mut a, &g, &sinks, Some(CLEAVE), None) };
-            let y = dp::<false, false>(&mut b, &g, &sinks, Some(CLEAVE), None);
+            let x = unsafe { dp_avx::<false, true>(&mut a, &g, &sinks, Some(CLEAVE), None) };
+            let y = dp::<false, false, true>(&mut b, &g, &sinks, Some(CLEAVE), None);
             match (x, y) {
                 (Some(x), Some(y)) => {
                     assert_eq!(x.dist.min_score, y.dist.min_score);
