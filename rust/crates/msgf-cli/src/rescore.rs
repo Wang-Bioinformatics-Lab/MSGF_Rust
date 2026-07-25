@@ -5,8 +5,14 @@
 //! search over a FASTA, see [`crate::search`].
 //!
 //! The generating function depends only on (spectrum, precursor mass, isotope range, amino-acid
-//! alphabet) — not on any one peptide — so it is built **once per `(scan, charge)`** and cached;
-//! every PSM against that spectrum is then a cheap RawScore + tail lookup.
+//! alphabet) — not on any one peptide — so it is built **once per `(scan, charge)`** and shared by
+//! every PSM against that spectrum, each of which is then a cheap RawScore + tail lookup.
+//!
+//! Because the whole PSM list is known up front, the driver runs in two passes per spectrum: the
+//! RawScore of every PSM sharing a `(scan, charge)` is computed first (it needs only the
+//! [`ScoredSpectrum`]), and the **minimum** of those RawScores becomes the pruning threshold for
+//! the one generating function they share ([`compute_tail_into`]). The tail is bit-identical to
+//! the full DP at and above that threshold, and no PSM in the group is ever queried below it.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use msgf_chem::{mass, scaling};
 use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
-use msgf_genfunc::{compute, merge_group, Cleavage, GenFunc};
+use msgf_genfunc::{compute, compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc};
 use msgf_io::MgfReader;
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -153,11 +159,33 @@ struct Psm {
     charge: Option<i32>,
 }
 
-/// Everything a `(scan, charge)` spectrum needs to score any peptide against it: the scored
-/// spectrum (for RawScore) and the prebuilt generating function (for DeNovoScore + SpecEValue).
-struct Prepared<'m> {
+/// The candidate-independent half of a `(scan, charge)`: the scored spectrum (all a RawScore
+/// needs) plus the isotope-error sink masses the generating function will be built over.
+struct PreparedSpec<'m> {
     scored: ScoredSpectrum<'m>,
-    gf: GenFunc,
+    sinks: Vec<i32>,
+}
+
+/// Why an input PSM produced no row. Recorded per PSM and replayed in input order so the driver's
+/// stderr is identical to the one-pass-per-PSM version's.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Skip {
+    NoSpectrum,
+    NoCharge,
+    NoGenFunc,
+    BadPeptide,
+}
+
+/// What one input PSM turned into.
+#[derive(Clone, Copy, Debug)]
+enum Outcome {
+    Row {
+        charge: i32,
+        raw: i32,
+        denovo: i32,
+        spec: f64,
+    },
+    Skip(Skip),
 }
 
 pub fn run(cfg: &Config) -> Result<(), String> {
@@ -166,6 +194,16 @@ pub fn run(cfg: &Config) -> Result<(), String> {
     let spectra = index_spectra(&cfg.spectra)?;
     let psms = read_psms(&cfg.psms)?;
     let (aa, prob_cleavage) = build_alphabet(cfg.aa_probs.as_deref(), cfg.ox_m)?;
+
+    let outcomes = score_all(
+        &model,
+        &spectra,
+        &psms,
+        &aa,
+        prob_cleavage,
+        cfg.ti,
+        /* pruned = */ true,
+    );
 
     let mut writer: Box<dyn Write> = match &cfg.out {
         Some(p) => Box::new(BufWriter::new(
@@ -179,90 +217,174 @@ pub fn run(cfg: &Config) -> Result<(), String> {
     }
     writeln!(writer, "{header}").map_err(io_err)?;
 
-    // GenFunc + ScoredSpectrum cache, one entry per (scan, charge). `None` = tried and unscorable.
-    let mut cache: HashMap<(String, i32), Option<Prepared>> = HashMap::new();
     let (mut scored_n, mut skipped_n) = (0usize, 0usize);
-
-    for psm in &psms {
-        let raw = match spectra.get(&psm.scan) {
-            Some(r) => r,
-            None => {
-                eprintln!(
-                    "skip scan {} ({}): not in spectra file",
-                    psm.scan, psm.peptide
-                );
+    for (psm, outcome) in psms.iter().zip(&outcomes) {
+        match *outcome {
+            Outcome::Skip(kind) => {
+                let why = match kind {
+                    Skip::NoSpectrum => "not in spectra file",
+                    Skip::NoCharge => "no charge",
+                    Skip::NoGenFunc => "could not build generating function",
+                    Skip::BadPeptide => "unparseable peptide",
+                };
+                eprintln!("skip scan {} ({}): {why}", psm.scan, psm.peptide);
                 skipped_n += 1;
-                continue;
             }
-        };
-        let charge = match psm.charge.or(raw.charge) {
-            Some(c) if c > 0 => c,
-            _ => {
-                eprintln!("skip scan {} ({}): no charge", psm.scan, psm.peptide);
-                skipped_n += 1;
-                continue;
+            Outcome::Row {
+                charge,
+                raw,
+                denovo,
+                spec,
+            } => {
+                write!(
+                    writer,
+                    "{}\t{}\t{}\t{}\t{}\t{:.6e}",
+                    psm.scan, psm.peptide, charge, raw, denovo, spec
+                )
+                .map_err(io_err)?;
+                if let Some(n) = cfg.db_size {
+                    write!(writer, "\t{:.6e}", spec * n).map_err(io_err)?;
+                }
+                writeln!(writer).map_err(io_err)?;
+                scored_n += 1;
             }
-        };
-
-        let prepared = cache
-            .entry((psm.scan.clone(), charge))
-            .or_insert_with(|| prepare(&model, raw, charge, &aa, prob_cleavage, cfg.ti));
-        let Some(prepared) = prepared.as_ref() else {
-            eprintln!(
-                "skip scan {} ({}): could not build generating function",
-                psm.scan, psm.peptide
-            );
-            skipped_n += 1;
-            continue;
-        };
-
-        let Some(residues) = msgf_chem::peptide::parse(&psm.peptide) else {
-            eprintln!(
-                "skip scan {} ({}): unparseable peptide",
-                psm.scan, psm.peptide
-            );
-            skipped_n += 1;
-            continue;
-        };
-        let nominal = msgf_chem::peptide::nominal_prefix_masses(&residues);
-        let accurate = msgf_chem::peptide::accurate_prefix_masses(&residues);
-        let num_mods = msgf_chem::peptide::num_mods(&residues) as i32;
-
-        // MS-GF+ RawScore = node+edge match score (DBScanScorer.getScore) + terminal cleavage.
-        // `scored.raw_score` is the node+edge part; add the peptide/neighboring cleavage the graph
-        // scores at the termini so the SpecEValue tail is looked up at the same score MS-GF+ reports.
-        let raw_score = prepared.scored.raw_score(&nominal, &accurate, num_mods)
-            + cleavage_score(&psm.peptide, &residues);
-        let denovo = prepared.gf.max_score();
-        let spec = prepared.gf.spectral_probability(raw_score);
-
-        write!(
-            writer,
-            "{}\t{}\t{}\t{}\t{}\t{:.6e}",
-            psm.scan, psm.peptide, charge, raw_score, denovo, spec
-        )
-        .map_err(io_err)?;
-        if let Some(n) = cfg.db_size {
-            write!(writer, "\t{:.6e}", spec * n).map_err(io_err)?;
         }
-        writeln!(writer).map_err(io_err)?;
-        scored_n += 1;
     }
     writer.flush().map_err(io_err)?;
     eprintln!("rescored {scored_n} PSM(s); skipped {skipped_n}");
     Ok(())
 }
 
-/// Build the scored spectrum and generating function for one `(scan, charge)`. `None` if the
-/// precursor is implausible or the sinks are unreachable.
-fn prepare<'m>(
-    model: &'m ScoringModel,
-    raw: &RawSpectrum,
-    charge: i32,
+/// Score every PSM, grouped by `(scan, charge)`.
+///
+/// The PSM list is read whole, so the input order is only an *output* constraint: the driver walks
+/// spectra instead, which is what makes tail pruning available. For each `(scan, charge)` group it
+///
+/// 1. builds the [`ScoredSpectrum`] once and takes the RawScore of every PSM in the group, then
+/// 2. builds the group's single generating function pruned to the **minimum** of those RawScores —
+///    the lowest score any of them will ever query — and reads each PSM's tail off it.
+///
+/// Grouping (rather than two passes over the whole list) is what keeps the memory profile honest:
+/// exactly one `ScoredSpectrum` and one `GenFunc` are live at a time, where the previous
+/// PSM-ordered driver kept one of each for **every** distinct `(scan, charge)` alive in a cache
+/// until the run ended. What it costs is one `Vec<usize>` of PSM indices per group plus a 24-byte
+/// [`Outcome`] per PSM, held so rows can be emitted in input order.
+///
+/// `pruned = false` runs the unpruned [`compute`] instead — the pre-pruning path, kept callable so
+/// `pruned_matches_unpruned_bitwise` can assert the two agree to the last bit.
+fn score_all(
+    model: &ScoringModel,
+    spectra: &HashMap<String, RawSpectrum>,
+    psms: &[Psm],
     aa: &[Aa],
     prob_cleavage: f64,
     ti: (i32, i32),
-) -> Option<Prepared<'m>> {
+    pruned: bool,
+) -> Vec<Outcome> {
+    // Resolve spectrum + charge per PSM (in input order, so the skip reasons match), and bucket the
+    // survivors by key. `groups` maps a key to its slot in `keyed`, which preserves first-appearance
+    // order so the run is deterministic.
+    let mut outcomes: Vec<Outcome> = Vec::with_capacity(psms.len());
+    let mut groups: HashMap<(&str, i32), usize> = HashMap::new();
+    let mut keyed: Vec<((&str, i32), Vec<usize>)> = Vec::new();
+    for (i, psm) in psms.iter().enumerate() {
+        let Some(raw) = spectra.get(&psm.scan) else {
+            outcomes.push(Outcome::Skip(Skip::NoSpectrum));
+            continue;
+        };
+        let charge = match psm.charge.or(raw.charge) {
+            Some(c) if c > 0 => c,
+            _ => {
+                outcomes.push(Outcome::Skip(Skip::NoCharge));
+                continue;
+            }
+        };
+        // Provisional: a group whose generating function cannot be built reports exactly this for
+        // every one of its PSMs, including ones with unparseable peptides (the previous driver
+        // checked the spectrum before the peptide, and that precedence is preserved below).
+        outcomes.push(Outcome::Skip(Skip::NoGenFunc));
+        let key = (psm.scan.as_str(), charge);
+        match groups.get(&key) {
+            Some(&slot) => keyed[slot].1.push(i),
+            None => {
+                groups.insert(key, keyed.len());
+                keyed.push((key, vec![i]));
+            }
+        }
+    }
+
+    let cleave = Cleavage {
+        credit: 2,
+        penalty: -11,
+        prob_cleavage_sites: prob_cleavage,
+    };
+    let mut scratch = DpScratch::default();
+    let mut raws: Vec<i32> = Vec::new();
+    for &((scan, charge), ref idxs) in &keyed {
+        let raw_spectrum = &spectra[scan];
+        let Some(prep) = prepare_spec(model, raw_spectrum, charge, ti) else {
+            continue; // outcomes already carry Skip::NoGenFunc
+        };
+
+        // Pass 1: RawScores. `i32::MIN` marks an unparseable peptide — no real RawScore can reach
+        // it, so it neither lowers the threshold nor becomes a row.
+        raws.clear();
+        let mut threshold = i32::MAX;
+        for &i in idxs {
+            match raw_score_of(&prep.scored, &psms[i].peptide) {
+                Some(r) => {
+                    threshold = threshold.min(r);
+                    raws.push(r);
+                }
+                None => raws.push(i32::MIN),
+            }
+        }
+
+        // Pass 2: the group's generating function, pruned to the lowest score it will be asked for.
+        // A group with no scorable PSM leaves `threshold` at `i32::MAX`; the DP clamps the cut to
+        // the DeNovoScore, so that is simply the cheapest exact run, and it is still needed to
+        // decide whether these PSMs skip as "unparseable" or as "no generating function".
+        let Some(gf) = build_gf(&prep, aa, cleave, &mut scratch, pruned.then_some(threshold))
+        else {
+            continue;
+        };
+        let denovo = gf.max_score();
+        for (&i, &raw) in idxs.iter().zip(&raws) {
+            outcomes[i] = if raw == i32::MIN {
+                Outcome::Skip(Skip::BadPeptide)
+            } else {
+                Outcome::Row {
+                    charge,
+                    raw,
+                    denovo,
+                    spec: gf.spectral_probability(raw),
+                }
+            };
+        }
+    }
+    outcomes
+}
+
+/// MS-GF+ RawScore = node+edge match score (`DBScanScorer.getScore`) + terminal cleavage.
+/// `scored.raw_score` is the node+edge part; the peptide/neighboring cleavage the graph scores at
+/// the termini is added so the SpecEValue tail is looked up at the same score MS-GF+ reports.
+/// `None` if the peptide does not parse.
+fn raw_score_of(scored: &ScoredSpectrum, peptide: &str) -> Option<i32> {
+    let residues = msgf_chem::peptide::parse(peptide)?;
+    let nominal = msgf_chem::peptide::nominal_prefix_masses(&residues);
+    let accurate = msgf_chem::peptide::accurate_prefix_masses(&residues);
+    let num_mods = msgf_chem::peptide::num_mods(&residues) as i32;
+    Some(scored.raw_score(&nominal, &accurate, num_mods) + cleavage_score(peptide, &residues))
+}
+
+/// Build the scored spectrum and isotope-error sink set for one `(scan, charge)`. `None` if the
+/// precursor is implausible or the sink range is empty.
+fn prepare_spec<'m>(
+    model: &'m ScoringModel,
+    raw: &RawSpectrum,
+    charge: i32,
+    ti: (i32, i32),
+) -> Option<PreparedSpec<'m>> {
     // Neutral precursor mass, then the candidate peptide's nominal mass (precursor − water).
     let parent_mass = raw.precursor_mz as f32 * charge as f32 - charge as f32 * mass::PROTON as f32;
     let pep_nominal = scaling::nominal_bin(parent_mass - mass::WATER as f32);
@@ -280,18 +402,28 @@ fn prepare<'m>(
 
     let peaks = preprocess(model, charge, parent_mass, &raw.peaks);
     let scored = ScoredSpectrum::from_ranked_peaks(model, charge, parent_mass, peaks);
-    let cleave = Cleavage {
-        credit: 2,
-        penalty: -11,
-        prob_cleavage_sites: prob_cleavage,
-    };
+    Some(PreparedSpec { scored, sinks })
+}
+
+/// Build the merged generating function for one prepared spectrum. With `threshold = Some(t)` the
+/// DP discards every score cell that provably cannot reach `t`; the resulting tail is bit-identical
+/// to the unpruned one for every score `>= t`, and `max_score()` (DeNovoScore) is exact regardless.
+/// `None` means the sinks are unreachable — the same condition the unpruned path returns `None` on,
+/// because the cut is clamped to the DeNovoScore and so never empties a reachable graph.
+fn build_gf(
+    prep: &PreparedSpec,
+    aa: &[Aa],
+    cleave: Cleavage,
+    scratch: &mut DpScratch,
+    threshold: Option<i32>,
+) -> Option<GenFunc> {
     // GeneratingFunctionGroup: one graph per candidate peptide mass (isotope range), then merged.
     // Tables and edges are candidate-independent, so build them once for the largest candidate and
     // only recompute node scores per candidate.
-    let max_p = *sinks.iter().max().unwrap(); // sinks is non-empty (checked above)
-    let tables = scored.tables(max_p);
+    let max_p = *prep.sinks.iter().max().unwrap(); // sinks is non-empty (prepare_spec checked)
+    let tables = prep.scored.tables(max_p);
     let (mut graph, _) = build_reverse_graph(
-        &scored,
+        &prep.scored,
         &tables,
         max_p,
         &[max_p],
@@ -299,14 +431,17 @@ fn prepare<'m>(
         PeptideCleavage::TRYPSIN,
     );
     let mut gfs: Vec<GenFunc> = Vec::new();
-    for &p in &sinks {
+    for &p in &prep.sinks {
         graph.recompute_node_scores(&tables, p, &[p]);
-        if let Some(gf) = compute(&graph, &[p as usize], Some(cleave)) {
+        let gf = match threshold {
+            Some(t) => compute_tail_into(scratch, &graph, &[p as usize], Some(cleave), t),
+            None => compute(&graph, &[p as usize], Some(cleave)),
+        };
+        if let Some(gf) = gf {
             gfs.push(gf);
         }
     }
-    let gf = merge_group(&gfs)?;
-    Some(Prepared { scored, gf })
+    merge_group(&gfs)
 }
 
 // ---- input parsing ---------------------------------------------------------------------------
@@ -505,4 +640,108 @@ fn cleavage_score(pep: &str, residues: &[msgf_chem::peptide::Residue]) -> i32 {
 
 pub fn io_err(e: io::Error) -> String {
     format!("I/O error: {e}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo(rel: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join(rel)
+    }
+
+    /// The per-group tail-pruned driver must reproduce the unpruned one **bit for bit**: same
+    /// outcome for every PSM, identical integer RawScore/DeNovoScore, and a SpecEValue equal as an
+    /// `f64` bit pattern (not within an epsilon — the prune is exact, so anything less tests
+    /// nothing). Skipped when the reference spectra/model/golden are absent.
+    #[test]
+    fn pruned_matches_unpruned_bitwise() {
+        let mgf = repo("validation/data/spectra/F13.mgf");
+        let param = repo("validation/data/models/HCD_HighRes_Tryp.param");
+        let list = repo("validation/golden/iprg2013_F13.tsv");
+        if !mgf.exists() || !param.exists() || !list.exists() {
+            eprintln!("skip: F13 spectra / HighRes model / golden PSM list absent");
+            return;
+        }
+        let (model, _) = crate::model::load(Some(param.as_path())).expect("model");
+        let spectra = index_spectra(&mgf).expect("spectra");
+        let (aa, prob_cleavage) = build_alphabet(None, true).expect("alphabet");
+
+        // MS-GF+'s own F13 output: ScanNum, Charge, Peptide. Several PSMs share a scan, which is
+        // the case the group minimum exists for. Two deliberately broken rows exercise the skip
+        // paths (unparseable peptide, and a scan that is not in the MGF).
+        let text = std::fs::read_to_string(&list).expect("golden PSM list");
+        let mut psms: Vec<Psm> = text
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .filter_map(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                Some(Psm {
+                    scan: f.get(2)?.to_string(),
+                    peptide: f.get(9)?.to_string(),
+                    charge: f.get(8).and_then(|c| c.parse().ok()),
+                })
+            })
+            .take(250) // enough distinct groups and thresholds; keeps a debug `cargo test` brisk
+            .collect();
+        assert!(psms.len() > 100, "expected a populated golden PSM list");
+        let borrowed_scan = psms[0].scan.clone();
+        psms.push(Psm {
+            scan: borrowed_scan,
+            peptide: "PEPTIDEJ".into(), // J is not a standard residue
+            charge: Some(2),
+        });
+        psms.push(Psm {
+            scan: "no-such-scan".into(),
+            peptide: "PEPTIDEK".into(),
+            charge: Some(2),
+        });
+
+        let pruned = score_all(&model, &spectra, &psms, &aa, prob_cleavage, (0, 1), true);
+        let full = score_all(&model, &spectra, &psms, &aa, prob_cleavage, (0, 1), false);
+
+        assert_eq!(pruned.len(), psms.len());
+        assert_eq!(full.len(), psms.len());
+        let mut rows = 0usize;
+        for (i, (p, f)) in pruned.iter().zip(&full).enumerate() {
+            match (*p, *f) {
+                (Outcome::Skip(a), Outcome::Skip(b)) => assert_eq!(a, b, "PSM {i} skip reason"),
+                (
+                    Outcome::Row {
+                        charge: ca,
+                        raw: ra,
+                        denovo: da,
+                        spec: sa,
+                    },
+                    Outcome::Row {
+                        charge: cb,
+                        raw: rb,
+                        denovo: db,
+                        spec: sb,
+                    },
+                ) => {
+                    assert_eq!((ca, ra, da), (cb, rb, db), "PSM {i} integer scores");
+                    assert_eq!(
+                        sa.to_bits(),
+                        sb.to_bits(),
+                        "PSM {i}: SpecEValue {sa:e} vs {sb:e} differ in bits"
+                    );
+                    rows += 1;
+                }
+                (a, b) => panic!("PSM {i}: outcome kind differs: {a:?} vs {b:?}"),
+            }
+        }
+        assert!(rows > 100, "expected scored rows, got {rows}");
+        // The two injected rows must have skipped, for the reasons the old driver gave.
+        assert!(matches!(
+            pruned[psms.len() - 2],
+            Outcome::Skip(Skip::BadPeptide)
+        ));
+        assert!(matches!(
+            pruned[psms.len() - 1],
+            Outcome::Skip(Skip::NoSpectrum)
+        ));
+    }
 }
