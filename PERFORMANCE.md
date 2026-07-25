@@ -117,23 +117,38 @@ For the SpecEValue stage (the part MSGF_Rust implements), 1-core CPU-time:
 
 On the 32-core box, MSGF_Rust scores the SpecEValue for 100k spectra in **~24 s of wall-clock**.
 
-### End-to-end MS-GF+ search (Java, for context)
+### End-to-end database search (`msgf search` vs MS-GF+)
 
-A full MS-GF+ search of `F13.mgf` vs the 40k-protein human DB (32 threads, DB index pre-built) took
-**66.9 s** wall (load index 14.9 s, read spectra 15.3 s, **search** 50.1 s, q-values + write 1.3 s;
-305.6 CPU-seconds). That whole-search number includes the **database candidate scan**, which
-MSGF_Rust does **not** implement yet (the future `msgf-search` engine) — so it is context, not a
-like-for-like comparison. The generating-function portion of that search is what the tables above
-isolate.
+Since the `msgf-search` engine landed this *is* a like-for-like comparison: the same 1,406 F13
+spectra against the same concatenated target-decoy human database (160,116 proteins = 80,058
+targets + 80,058 decoys), same model (`HCD_HighRes_Tryp.param`), same parameters
+(`-inst 1 -m 3 -e 1 -t 10ppm -ti 0,1`, `iprg-2013_Mods.txt`), both timed end-to-end including
+index construction.
+
+| | Wall | Threads | Peak RSS |
+|---|---|---|---|
+| **MS-GF+ (Java)** | 64.0 s | 6 | — |
+| **MSGF_Rust** | 5.92 s | 6 | 3.6 GB |
+| **MSGF_Rust** | **4.88 s** | 32 | 3.6 GB |
+
+**~10.8× thread-matched**, ~13× at full width. MS-GF+ chose 6 threads itself here — it enforces a
+250-spectra-per-thread minimum, so a 1,406-spectrum run caps at 6 no matter what `-thread` says;
+the 6-thread Rust row is the fair comparison. The Java breakdown is load DB 13.2 s, read spectra
+13.4 s, **search 48.8 s**, q-values 0.02 s, write 1.6 s. Rust builds its index in-process on every
+run (30.8M peptides → 48.4M modified candidates), and that build — not the scoring — is most of its
+5 s, which is why the 6→32 thread gain is modest.
+
+Both find the same single target PSM at 1% FDR (F13 identifies essentially nothing; see PLAN2 §4).
 
 ## Caveats (read these)
 
 - **Bit-exact output.** These timings compare implementations that produce identical SpecEValues
   (validated 30/30 against MS-GF+). Speed is not bought with accuracy — no `f32` probabilities, no
   FMA, no pruning beyond what MS-GF+ itself does.
-- **No database search yet.** MSGF_Rust implements the per-spectrum *scoring* (through SpecEValue),
-  not candidate generation / the fragment-index DB scan. Total-pipeline times are not comparable to
-  the Java full search until the `msgf-search` engine exists.
+- **Two different workloads below.** The tables above isolate the *generating function* (the DP
+  this project exists to make fast); the end-to-end section adds candidate generation and the DB
+  scan via `msgf-search`. Don't quote the 4.3× and the ~10.8× as if they measure the same thing —
+  the first is a per-spectrum kernel, the second a whole search dominated by index build.
 - **Nominal mass grid.** This workload runs on the nominal (~1 bin/Da) grid, which is what MS-GF+
   uses for F13 and what our SpecEValue matches. The 274×-finer high-precision grid
   (`INTEGER_MASS_SCALER_HIGH_PRECISION`) is a separate high-res mode not exercised here; the DP is
@@ -162,6 +177,14 @@ conda run -n msgfjava java -cp /tmp/c:../MSGFPlus.jar TimeGenFunc \
 conda run -n msgfjava java -Xmx8000M -jar ../MSGFPlus.jar \
   -s ../../data/spectra/F13.mgf -d ../../data/fasta/iprg2013_human.fasta \
   -mod ../../data/config/iprg-2013_Mods.txt -inst 1 -m 3 -e 1 -t 10ppm -ti 0,1 -tda 1 -thread 32 -o /tmp/f13.mzid
+
+# Rust end-to-end search, same inputs (--threads 6 to match what MS-GF+ picks for this spectrum count)
+cd rust && cargo build --release -p msgf-cli
+/usr/bin/time -v ./target/release/msgf search \
+  -s ../validation/data/spectra/F13.mgf -d ../validation/data/fasta/iprg2013_human.revCat.fasta \
+  --mods ../validation/data/config/iprg-2013_Mods.txt \
+  -p ../validation/data/models/HCD_HighRes_Tryp.param \
+  -t 10ppm --ti 0,1 -e 1 --threads 6 -o /tmp/f13.rust.tsv
 ```
 
 _Numbers above are from a single run on the machine described in **Platform**; expect ±10%

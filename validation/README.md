@@ -18,7 +18,7 @@ validation/
 │   ├── example/  test.mzid / test.tsv — an MS-GF+-authored result, used as GOLDEN SCHEMA ref
 │   └── MANIFEST.sha256       # checksums of everything fetched
 ├── reference/                # golden generators
-│   ├── build_all_golden.sh   # (re)build every golden, then run the regression suite
+│   ├── build_all_golden.sh   # (re)build every golden (--with-java), then run the regression suite
 │   ├── make_chemistry_golden.py   # physics-based masses (no Java) — guarded by published calibrants
 │   ├── make_spectra_golden.py     # per-spectrum parse facts + peak hashes (no Java)
 │   ├── make_param_inventory.py    # .param size/sha256/identity header (no Java)
@@ -79,8 +79,9 @@ Consequences, enforced by `.gitignore`:
 - These bytes are **not committed** to this repo — the script re-fetches them on demand.
 - The `.param` scoring models are likewise not vendored.
 - **Golden JSON derived by running MS-GF+ (or embedding its test data) is no longer committed
-  either** — it is regenerated locally by `reference/build_all_golden.sh`. Only the families that
-  owe nothing to UC (`golden/chemistry/`, `golden/models/param_inventory.golden.json`) stay in git.
+  either** — it is regenerated locally by `reference/build_all_golden.sh --with-java` (the flag is
+  required; without it only the no-Java families build). Only the families that owe nothing to UC
+  (`golden/chemistry/`, `golden/models/param_inventory.golden.json`) stay in git.
   See `golden/README.md` and `../LICENSING.md` for the split and the 2026-07-24 cleanup.
 - Golden-backed tests therefore **skip** on a checkout that has not fetched/generated them;
   `cargo test` still passes, it just validates less.

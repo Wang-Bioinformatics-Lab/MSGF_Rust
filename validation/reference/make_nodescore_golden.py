@@ -35,6 +35,11 @@ def main():
     for t in a.tsv:
         name, data = parse_tsv(t)
         models[name] = data
+    # Emit models in sorted name order, not the order the TSVs happened to arrive in: the caller
+    # globs a directory, so argument order is locale/filesystem dependent and would otherwise make
+    # the golden's bytes vary between runs that contain identical numbers.
+    models = {name: models[name] for name in sorted(models)}
+    for name, data in models.items():
         print(f"  {name}: {data['count']} rows, score_sum={data['score_sum']:.4f}")
     out = {
         "note": "MS-GF+ getNodeScore/getMissingIonScore per (partition, ion, rank); rank 'MISSING' = absent peak bin",

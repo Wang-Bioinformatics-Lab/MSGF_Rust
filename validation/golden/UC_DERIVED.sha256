@@ -2,13 +2,18 @@
 # had at that point. They are regenerated locally, never committed — see README.md. These
 # hashes are provenance evidence (MS-GF+ v2024.03.26 as fetched by fetch_reference_data.sh
 # --jar); a different MS-GF+ release may legitimately produce different bytes.
+#
+# models/node_scores.golden.json was re-hashed on 2026-07-24: make_nodescore_golden.py used to
+# emit the `models` object in whatever order the caller's glob yielded, so identical numbers
+# serialized to different bytes run to run. It now sorts by model name. The numbers are unchanged
+# — the pre-sort file parses equal to this one — only the key order is pinned.
 9fe8f626d0e37fbf2c7fbd65fbdde3853bfb9dd6e19b5ea13b98dc344cb0c615  iprg2013_F13.golden.json
 6911e8cc876437ae73f9a898b8cd510ae9150eb78e39e99c5bba996d0ebad003  iprg2013_F13.provenance.txt
 9ad1e49c6b52ff3675ff160edb2d5b2c3e178e1bc806d221dae6b6874a729134  models/CID_HighRes_Tryp.model.golden.json
 e599776916ce2b6db51200bfd80591175c2346358b31db3bc466d4c414b814e4  models/ETD_HighRes_Tryp.model.golden.json
 a82b63d0565413b81e74b5bf973e74a64a795ff9db05717d59a5029c470b7dc9  models/HCD_HighRes_Tryp.model.golden.json
 a5e0f7a4a5cedd01952accfeb496388969f342c4c087cfe8f3cfeefeca58367d  models/HCD_QExactive_Tryp.model.golden.json
-cd3ae1b9a26b6204b688172a74151420fb244dd8a063a9e070456a731053a9e8  models/node_scores.golden.json
+a35f0bb440b5f821f2a33ba3a0d847137b4ab8fda57745b83e07c365b51427ef  models/node_scores.golden.json
 c6e21a2f1eca76b21bed2ab498f43467114c3644178197e4a016d121b5599b2d  rawscore/f13_rawscore.golden.json
 a8a55cf3f6bcb1464e33ad83f42d990906b84782c73e6814c6474db79b87dde7  rawscore/f13_rawscore_highres.golden.json
 c746bad0a8a085b906fcc7c6ae7084cbedbf70910b0c1e50e88fff3b40b71ed7  rawscore/f13_scored_spectrum.golden.json
