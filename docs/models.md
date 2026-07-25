@@ -235,8 +235,11 @@ Each ends at a gate; ordered so value lands early and the release blocker clears
   on log10 SpecEValue, +7 % scoring time. Write-up: [`training.md`](training.md).
 - **M4a — Ship the model (done, 2026-07-24).** ✅ The MassIVE-KB model is embedded in `msgf-scorer`
   and is the CLI default; UC-derived goldens are no longer committed; repo has an MIT `LICENSE` and
-  a `LICENSING.md` accounting. **Gate met: the shipping path contains no UC-derived bytes.** What
-  remains of M4 is quality, not licensing:
+  a `LICENSING.md` accounting. **Gate met: the shipping path contains no UC-derived bytes.**
+  Note the consequence for users: the bit-exactness contract is measured with MS-GF+'s `.param`
+  and does not transfer to the default model — a model *is* the scoring function. The measured
+  divergence (66.6 % vs 92.7 % top-peptide agreement with MS-GF+ on F13) is in
+  `rust/crates/msgf-scorer/models/README.md`. What remains of M4 is quality, not licensing:
 - **M4 — Provenance-raw v1 + permissive format (Level 2).** Train from raw provenance spectra
   (4.2b); define + ship our own model container under MIT/CC0; UC `.param` path demoted to
   test-only. *Gate:* v1 ≥ v0 on the benchmark; **repo builds and ships with no UC-derived bytes on

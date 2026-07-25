@@ -34,7 +34,9 @@ COMMANDS:
 Run `msgf <COMMAND> --help` for that command's options.
 
 Scoring uses the bundled HCD/HighRes/Tryptic model (trained from the CC0 MassIVE-KB corpus)
-unless `--param <MODEL.param>` names another one.
+unless `--param <MODEL.param>` names another one. To reproduce or diff against MS-GF+'s own
+output, pass MS-GF+'s .param — the bundled model is a different scoring function and gives
+different peptides and SpecEValues by construction.
 
 EXAMPLES:
     # Search a concatenated target-decoy database (no --param: uses the bundled model)

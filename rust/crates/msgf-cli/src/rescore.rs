@@ -53,9 +53,13 @@ PEPTIDE FORMAT (in the --psms file):
 
 NOTES:
     The default alphabet (20 residues, uniform 0.05) matches MS-GF+ de novo. To reproduce a
-    specific MS-GF+ *search* bit-for-bit, pass that search's --aa-probs (DB composition) and the
-    same variable mods (--ox-m for oxidation on M); RawScore/DeNovoScore then match exactly and
-    SpecEValue to f64 accumulation noise.
+    specific MS-GF+ *search* bit-for-bit, pass all three of that search's settings:
+      --param     MS-GF+'s own .param for the acquisition (e.g. HCD_HighRes_Tryp.param).
+                  The bundled default is a DIFFERENT trained model and will not reproduce
+                  MS-GF+ — a model is the scoring function, so its numbers are its own.
+      --aa-probs  the searched database's composition (not the uniform default).
+      --ox-m      the same variable mods the search used, in the graph alphabet.
+    With all three, RawScore/DeNovoScore match exactly and SpecEValue to f64 accumulation noise.
 ";
 
 // ---- configuration / argument parsing --------------------------------------------------------

@@ -97,6 +97,12 @@ Three defaults are worth knowing:
 - **The scoring model is bundled.** With no `--param`, MSGF_Rust scores with its own
   HCD/high-res/tryptic model, trained from the CC0 MassIVE-KB corpus — nothing to download, and
   nothing UC-licensed on the path. Pass `--param` for another activation/instrument/enzyme.
+  **This is not the model the bit-exactness claims are measured with** — those use MS-GF+'s
+  `HCD_HighRes_Tryp.param`. A different model is a different scoring function, so the default
+  produces different peptides and SpecEValues (on F13, the same top peptide as MS-GF+ on 66.6 % of
+  scans, vs 92.7 % with MS-GF+'s model). It benchmarks competitively on held-out ground truth — it
+  is simply not a drop-in for reproducing MS-GF+ output. If that is your goal, pass `--param`.
+  [Details and numbers.](rust/crates/msgf-scorer/models/README.md)
 - **Missed cleavages are unlimited**, matching MS-GF+'s own default (`-maxMissedCleavages` has no
   limit there). This makes the index much larger; pass `-c 2` for a conventional search.
 - **Q-values need decoys.** Either search a concatenated database (`*.revCat.fasta` — decoys are
@@ -180,6 +186,15 @@ counted by this project's own trainer (`msgf-train`) from 258k PSMs of the **CC0
 peptide libraries. It is MIT-clean, ~1 MB, embedded in the binary, and announced on stderr at the
 start of every run so results stay traceable. Provenance and how it compares to MS-GF+'s model:
 [`rust/crates/msgf-scorer/models/README.md`](rust/crates/msgf-scorer/models/README.md).
+
+> **Which model you pass decides whether output is comparable to MS-GF+.** The fidelity results
+> quoted throughout this README — RawScore/DeNovoScore exact, SpecEValue within `|log10| ≤ 0.05` —
+> are measured with MS-GF+'s `HCD_HighRes_Tryp.param`. The bundled default is a *different* trained
+> model, so it scores differently by construction: on F13 it agrees with MS-GF+ on the top peptide
+> for 66.6 % of scans against 92.7 % for MS-GF+'s model, and reports 609 target PSMs against 624.
+> That is a divergence measurement, not a quality one — on held-out MassIVE-KB ground truth the two
+> models are within 0.3 % on IDs (1480 vs 1485) with Spearman ρ = 0.94 on log₁₀ SpecEValue.
+> Use `--param` to reproduce MS-GF+; use the default to run MSGF_Rust as its own engine.
 
 Pass `--param` when your data is not high-resolution HCD tryptic. MS-GF+'s own models
 (`HCD_QExactive_Tryp.param`, `CID_HighRes_Tryp.param`, `ETD_HighRes_Tryp.param`, …) are read
@@ -367,7 +382,9 @@ let spec_evalue = gf.spectral_probability(raw_score);
 To match a specific MS-GF+ *search* bit-for-bit (RawScore & DeNovoScore exact, SpecEValue to f64
 noise), the scoring configuration must match the search:
 
-1. **Model** — the `.param` for the acquisition (e.g. `HCD_HighRes_Tryp.param` for `-inst 1`).
+1. **Model** — MS-GF+'s own `.param` for the acquisition (e.g. `HCD_HighRes_Tryp.param` for
+   `-inst 1`), passed with `--param`. **The bundled default will not do**: it is a different
+   trained model, so it is a different scoring function. This is the requirement people miss.
 2. **Amino-acid probabilities** — the searched database's composition via `--aa-probs`
    (`DBScanner.setAminoAcidProbabilities`), *not* the uniform default.
 3. **Variable mods** — the same mod set in the graph alphabet (e.g. `--ox-m` for oxidation on M).
@@ -379,7 +396,8 @@ and DeNovoScore exact; SpecEValue worst `|Δlog10| ≈ 3e-5`). This is exercised
 reference data is absent — run `validation/fetch_reference_data.sh` to enable it.
 
 **Fidelity is the contract.** The value of this project is that the output is bit-exact to MS-GF+,
-not an approximation. Integer scores match exactly; SpecEValue within `|Δlog10| ≤ 0.05`. See
+not an approximation — *given MS-GF+'s model and matching configuration, as above*. Integer scores
+match exactly; SpecEValue within `|Δlog10| ≤ 0.05`. See
 [CLAUDE.md](CLAUDE.md) and [PLAN.md](PLAN.md) for the validation strategy and the data-absence
 contract.
 
