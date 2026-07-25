@@ -291,6 +291,7 @@ impl NodeDist {
 pub struct DpScratch {
     arena: Vec<f64>,
     dists: Vec<NodeDist>,
+    live: Vec<u8>,
 }
 
 impl DpScratch {
@@ -355,6 +356,33 @@ pub fn compute_into(
     sc.arena.clear();
     sc.dists.clear();
     sc.dists.resize(n, NodeDist::ABSENT);
+    sc.live.clear();
+    sc.live.resize(n, 0);
+
+    // Restrict the forward DP to nodes that can reach at least one requested sink. Walking the
+    // incoming CSR edges backward marks the exact union of sink ancestors; nodes outside it cannot
+    // contribute probability to the result. This is especially useful near the sink, where many
+    // nominal-mass remainders cannot be composed from the amino-acid alphabet.
+    for &sink in sinks {
+        if sink < n {
+            sc.live[sink] = 1;
+        }
+    }
+    for i in (1..n).rev() {
+        if sc.live[i] == 0 {
+            continue;
+        }
+        let (e0, e1) = (
+            graph.edge_start[i] as usize,
+            graph.edge_start[i + 1] as usize,
+        );
+        for e in e0..e1 {
+            let prev = graph.edge_prev[e] as usize;
+            if prev < n {
+                sc.live[prev] = 1;
+            }
+        }
+    }
 
     // Source: point mass (prob 1) at score 0.
     sc.arena.push(1.0);
@@ -365,6 +393,9 @@ pub fn compute_into(
     };
 
     for i in 1..n {
+        if sc.live[i] == 0 {
+            continue;
+        }
         let node_score = graph.node_score[i];
         let (e0, e1) = (
             graph.edge_start[i] as usize,
@@ -530,5 +561,38 @@ mod tests {
         .unwrap();
         approx(gf.spectral_probability(2), 0.25); // score 2 with prob 0.25
         approx(gf.spectral_probability(-1), 1.0); // full mass
+    }
+
+    #[test]
+    fn compute_skips_nodes_that_cannot_reach_a_sink() {
+        let g = Graph::from_adj(&[
+            (0, vec![]),
+            (1, vec![(0, 0, 1.0)]),
+            (50, vec![(0, 0, 1.0)]), // reachable from source, but a dead end
+            (2, vec![(1, 0, 1.0)]),
+        ]);
+        let mut scratch = DpScratch::default();
+        let gf = compute_into(&mut scratch, &g, &[3], None).unwrap();
+        assert_eq!(gf.max_score(), 3);
+        approx(gf.spectral_probability(3), 1.0);
+        assert_eq!(scratch.reachable(), 3);
+    }
+
+    #[test]
+    fn sink_pruning_keeps_the_union_of_multiple_sink_ancestors() {
+        let g = Graph::from_adj(&[
+            (0, vec![]),
+            (1, vec![(0, 0, 0.5)]),
+            (2, vec![(0, 0, 0.25)]),
+            (0, vec![(1, 0, 1.0)]),  // first sink
+            (0, vec![(2, 0, 1.0)]),  // second sink
+            (50, vec![(0, 0, 1.0)]), // reachable dead end
+        ]);
+        let mut scratch = DpScratch::default();
+        let gf = compute_into(&mut scratch, &g, &[3, 4], None).unwrap();
+        assert_eq!(gf.max_score(), 2);
+        approx(gf.spectral_probability(1), 0.75);
+        approx(gf.spectral_probability(2), 0.25);
+        assert_eq!(scratch.reachable(), 5);
     }
 }
