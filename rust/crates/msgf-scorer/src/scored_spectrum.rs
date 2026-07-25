@@ -434,18 +434,115 @@ impl<'a> ScoredSpectrum<'a> {
     /// `build_reverse_graph`.
     pub fn tables(&self, max_nominal: i32) -> SpectrumTables {
         let m = max_nominal.max(0);
-        let node_mass = self.node_masses(m);
+        let Some(cache) = self.node_score_cache.as_ref() else {
+            // No usable cache (a model without full rank distributions) — take the plain
+            // node-at-a-time path, which is where that case's panic belongs.
+            let mut prefix = vec![0.0f32; (m + 1) as usize];
+            let mut suffix = vec![0.0f32; (m + 1) as usize];
+            for k in 1..=m {
+                prefix[k as usize] = self.node_score(k, true);
+                suffix[k as usize] = self.node_score(k, false);
+            }
+            return SpectrumTables {
+                node_mass: self.node_masses(m),
+                prefix,
+                suffix,
+            };
+        };
+
+        // Ion-major sweep. `node_score` visits, per node, every segment's every ion and throws away
+        // ~75% of those iterations — half for the wrong polarity, and a quarter because the
+        // theoretical m/z does not land back in the segment being iterated. Both filters are
+        // properties of `(segment, ion)` and the node *range*, not of an individual node, so
+        // hoisting the loops lets them be applied once instead of per node.
+        //
+        // Summation order is preserved exactly: `prefix[k]` still accumulates prefix ions in
+        // `(segment, ion)` order, which is the order `node_score` adds them in, so every cell is
+        // bit-identical. `tables_match_node_score` pins that.
         let mut prefix = vec![0.0f32; (m + 1) as usize];
         let mut suffix = vec![0.0f32; (m + 1) as usize];
-        for k in 1..=m {
-            prefix[k as usize] = self.node_score(k, true);
-            suffix[k as usize] = self.node_score(k, false);
+        let max_rank = self.model.max_rank;
+
+        for seg in 0..self.model.num_segments {
+            let Some(part_idx) = self.seg_partition[seg as usize] else {
+                continue;
+            };
+            for (ion_idx, ion) in self.model.frag_off[part_idx].iter().enumerate() {
+                let (lo_k, hi_k) = self.segment_node_range(ion, seg, m);
+                if lo_k >= hi_k {
+                    continue;
+                }
+                let out = if ion.is_prefix {
+                    &mut prefix
+                } else {
+                    &mut suffix
+                };
+                // The theoretical m/z rises with the node index, so the match window only ever
+                // moves right: one cursor walks the peak list instead of re-entering it through the
+                // bucket index (and backtracking) on every node.
+                let mut cursor = 0usize;
+                for k in lo_k..hi_k {
+                    let theo = ion.mz(scaling::nominal_to_mass(k));
+                    let tol = self.tol_da(theo);
+                    let (win_lo, win_hi) = (theo - tol, theo + tol);
+                    while cursor < self.peaks.len() && self.peaks[cursor].mz < win_lo {
+                        cursor += 1;
+                    }
+                    let mut best: Option<&RankedPeak> = None;
+                    for p in &self.peaks[cursor..] {
+                        if p.mz > win_hi {
+                            break;
+                        }
+                        match best {
+                            Some(b) if p.intensity < b.intensity => {}
+                            _ => best = Some(p),
+                        }
+                    }
+                    let bin = match best {
+                        Some(p) if p.rank > max_rank => (max_rank - 1) as usize,
+                        Some(p) => (p.rank - 1) as usize,
+                        None => max_rank as usize,
+                    };
+                    out[k as usize] += cache.get(seg as usize, ion_idx, bin);
+                }
+            }
         }
+
         SpectrumTables {
-            node_mass,
+            node_mass: self.node_masses(m),
             prefix,
             suffix,
         }
+    }
+
+    /// The contiguous node range `[lo, hi)` within `1..=max_nominal` on which `ion`'s theoretical
+    /// m/z falls in segment `seg` — i.e. exactly where `node_score`'s `segment_num(theo) != seg`
+    /// test does *not* discard the iteration.
+    ///
+    /// The range is contiguous because `FragOff::mz` is monotone in the node mass and `segment_num`
+    /// is monotone in m/z, making `segment_num(theo(k))` a non-decreasing step function of `k`. The
+    /// bounds are found by binary search **on that predicate itself**, evaluated with the same
+    /// float arithmetic as the per-node path, rather than by inverting the formula — so there is no
+    /// second expression that could round differently.
+    fn segment_node_range(&self, ion: &FragOff, seg: i32, max_nominal: i32) -> (i32, i32) {
+        let seg_at = |k: i32| self.segment_num(ion.mz(scaling::nominal_to_mass(k)));
+        // First k in 1..=max_nominal with segment_num >= seg, then the first with > seg.
+        let search = |mut lo: i32, mut hi: i32, want_gt: bool| {
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2;
+                let s = seg_at(mid);
+                let before = if want_gt { s <= seg } else { s < seg };
+                if before {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            lo
+        };
+        let lo = search(1, max_nominal + 1, false);
+        let hi = search(lo, max_nominal + 1, true);
+        (lo, hi)
     }
 
     /// `getNodeMass`: the main ion's matched-peak mass for a node, or -1 when absent.
@@ -642,5 +739,45 @@ mod tests {
             nonzero > 100,
             "expected the sweep to score real nodes, got {nonzero} non-zero"
         );
+    }
+
+    /// `tables()` inverts `node_score`'s loops to `(segment, ion)` outer so the polarity and
+    /// segment filters are applied once per ion rather than once per node. That is only legitimate
+    /// if it changes nothing: every cell must be the identical `f32`, which requires the per-node
+    /// summation order to survive the inversion. Compared with `to_bits`.
+    #[cfg(feature = "bundled-model")]
+    #[test]
+    fn tables_match_node_score() {
+        let model = &crate::bundled::model().expect("bundled model decodes");
+        // Several precursor masses and charges: the segment boundaries, and therefore the node
+        // ranges the inverted loop derives, move with the parent mass.
+        for (charge, parent_mass) in [(2, 900.0f32), (2, 1800.0), (3, 2600.0), (3, 4100.0)] {
+            let peaks: Vec<(f32, f32)> = (0..500)
+                .map(|i| {
+                    let mz = 110.0 + i as f32 * 3.11;
+                    (mz, ((i * 7919) % 997) as f32 + 1.0)
+                })
+                .collect();
+            let ranked = crate::preprocess::preprocess(model, charge, parent_mass, &peaks);
+            let scored = ScoredSpectrum::from_ranked_peaks(model, charge, parent_mass, ranked);
+            assert!(scored.node_score_cache.is_some(), "expected a cache");
+
+            let m = scaling::nominal_bin(parent_mass - mass::WATER as f32);
+            let t = scored.tables(m);
+            for k in 1..=m {
+                assert_eq!(
+                    t.prefix[k as usize].to_bits(),
+                    scored.node_score(k, true).to_bits(),
+                    "charge {charge} mass {parent_mass}: prefix node {k}"
+                );
+                assert_eq!(
+                    t.suffix[k as usize].to_bits(),
+                    scored.node_score(k, false).to_bits(),
+                    "charge {charge} mass {parent_mass}: suffix node {k}"
+                );
+            }
+            assert_eq!(t.prefix[0], 0.0);
+            assert_eq!(t.suffix[0], 0.0);
+        }
     }
 }
