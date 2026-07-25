@@ -18,10 +18,17 @@ optimizations:
    ancestors. The forward probability DP skips source-reachable nodes that cannot contribute to a
    sink.
 
-On the 1,406-spectrum F13 benchmark, the combined experiment reduced DP time from approximately
-3.09 s to 2.50 s and the full pipeline from 4.48 s to 3.90 s. Sink pruning reduced average
-distribution cells per graph from 136,351 to 107,746. Golden DeNovoScore and SpecEValue remained
-exact for all 30 checked PSMs.
+On the 1,406-spectrum F13 benchmark, draft PR #9 produced these measured gains:
+
+| Measurement | Before | PR #9 | Improvement |
+|---|---:|---:|---:|
+| DP compute | 3.09 s | 2.50 s | **19.1% faster** |
+| Full pipeline | 4.48 s | 3.90 s | **12.9% faster** |
+| Throughput | 314 spectra/s | 360 spectra/s | **14.6% higher** |
+| Distribution cells per graph | 136,351 | 107,746 | **21.0% fewer** |
+
+The sink-ancestor pruning step alone was approximately 15.6% faster in the DP and 10.6% faster
+end-to-end. Golden DeNovoScore and SpecEValue remained exact for all 30 checked PSMs.
 
 ## Further Exact-Pruning Ideas
 
