@@ -195,6 +195,16 @@ pub fn run(cfg: &Config) -> Result<(), String> {
     let psms = read_psms(&cfg.psms)?;
     let (aa, prob_cleavage) = build_alphabet(cfg.aa_probs.as_deref(), cfg.ox_m)?;
 
+    // Open the output *before* scoring. Grouping by `(scan, charge)` means rows can only be emitted
+    // once every group is done, but an unwritable `--out` must still fail in the first second rather
+    // than after a full multi-minute generating-function run.
+    let mut writer: Box<dyn Write> = match &cfg.out {
+        Some(p) => Box::new(BufWriter::new(
+            File::create(p).map_err(|e| format!("creating {}: {e}", p.display()))?,
+        )),
+        None => Box::new(BufWriter::new(io::stdout())),
+    };
+
     let outcomes = score_all(
         &model,
         &spectra,
@@ -205,12 +215,6 @@ pub fn run(cfg: &Config) -> Result<(), String> {
         /* pruned = */ true,
     );
 
-    let mut writer: Box<dyn Write> = match &cfg.out {
-        Some(p) => Box::new(BufWriter::new(
-            File::create(p).map_err(|e| format!("creating {}: {e}", p.display()))?,
-        )),
-        None => Box::new(BufWriter::new(io::stdout())),
-    };
     let mut header = String::from("scan\tpeptide\tcharge\traw_score\tdenovo_score\tspec_evalue");
     if cfg.db_size.is_some() {
         header.push_str("\tevalue");

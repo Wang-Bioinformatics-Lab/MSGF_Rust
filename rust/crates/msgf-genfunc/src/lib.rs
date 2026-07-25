@@ -188,9 +188,9 @@ impl ScoreDist {
 /// `Vec<Edge>` (which reallocated on every `push`) with flat buffers allocated once per graph.
 ///
 /// The per-edge amino-acid **probability** is *not* stored per edge: it takes one of `|alphabet|`
-/// (~21) values, so the edge carries a one-byte index `edge_aa` into the `aa_prob` table and the DP
+/// (~21) values, so the edge carries a two-byte index `edge_aa` into the `aa_prob` table and the DP
 /// reads `aa_prob[edge_aa[e] as usize]`. That is the identical `f64` bit pattern the old
-/// `edge_prob: Vec<f64>` held — the arithmetic is unchanged — at 1/8 the memory traffic. The index
+/// `edge_prob: Vec<f64>` held — the arithmetic is unchanged — at 1/4 the memory traffic. The index
 /// is explicit rather than derived from the nominal mass because distinct amino acids share nominal
 /// masses (I/L at 113, K/Q at 128), so two parallel edges can differ only by which one they are.
 #[derive(Debug, Clone, Default)]
@@ -200,7 +200,7 @@ pub struct Graph {
     pub edge_prev: Vec<u32>,
     pub edge_score: Vec<i32>,
     /// Per-edge index into [`Graph::aa_prob`], in amino-acid insertion order.
-    pub edge_aa: Vec<u8>,
+    pub edge_aa: Vec<u16>,
     /// Amino-acid background probabilities, indexed by [`Graph::edge_aa`].
     pub aa_prob: Vec<f64>,
 }
@@ -249,12 +249,13 @@ impl Graph {
                     }
                 };
                 assert!(
-                    idx < 256,
-                    "Graph supports at most 256 distinct edge probabilities"
+                    idx <= u16::MAX as usize,
+                    "Graph supports at most {} distinct edge probabilities",
+                    u16::MAX
                 );
                 g.edge_prev.push(prev as u32);
                 g.edge_score.push(es);
-                g.edge_aa.push(idx as u8);
+                g.edge_aa.push(idx as u16);
             }
             g.edge_start.push(g.edge_prev.len() as u32);
         }
@@ -290,10 +291,15 @@ pub struct GenFunc {
 
 impl GenFunc {
     /// Spectral probability (the p-value) at the observed RawScore.
+    /// Querying below [`Self::valid_from`] is a programming error, not a smaller number: the cells
+    /// under the pruning threshold were never computed, so the sum would be silently too small.
+    /// This is asserted in **release** too — on the pruned path a wrong SpecEValue is far worse
+    /// than a panic, and the check is one predictable branch per PSM against a whole DP.
     pub fn spectral_probability(&self, raw_score: i32) -> f64 {
-        debug_assert!(
-            raw_score >= self.valid_from,
-            "spectral_probability({raw_score}) below the pruning threshold {}",
+        assert!(
+            self.valid_from == i32::MIN || raw_score >= self.valid_from,
+            "spectral_probability({raw_score}) below the pruning threshold {}: those cells were \
+             never computed",
             self.valid_from
         );
         self.dist.spectral_probability(raw_score)
@@ -353,7 +359,7 @@ struct EdgeDesc {
     src_min: i32,
     /// `node_score + edge_score` — what the convolution shifts by.
     score_diff: i32,
-    /// The edge's amino-acid probability (`Graph::edge_prob`).
+    /// The edge's amino-acid probability, resolved through `Graph::aa_prob[edge_aa[e]]`.
     prob: f64,
 }
 

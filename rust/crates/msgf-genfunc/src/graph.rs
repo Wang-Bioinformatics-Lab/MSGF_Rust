@@ -124,6 +124,42 @@ pub fn build_reverse_graph(
     (graph, sink_idx)
 }
 
+/// Fill the CSR offsets `edge_start[0..=graph_max + 1]` and return the total edge count.
+///
+/// The incoming-edge count of node `m` is a pure function of the node mass — the number of amino
+/// acids with `nominal <= m` — so it saturates at `|aa|` for every node at or above the heaviest
+/// residue (only ~186 of the ~1,500 nodes are below it). Count those few by scanning the alphabet
+/// and fill the rest from the saturated count, rather than rescanning the alphabet for every node
+/// and prefix-summing in a second pass.
+///
+/// Node 0 is the source and always has zero incoming edges. That is why `saturated_from` is clamped
+/// to at least 1: an alphabet whose nominal masses are all `<= 0` drives it to 0, and without the
+/// clamp the saturating loop would credit the source with `|aa|` edges and shift every subsequent
+/// offset by that much (`fused_offsets_match_the_naive_count` pins this).
+fn fill_edge_offsets(edge_start: &mut [u32], graph_max: i32, aa: &[Aa]) -> u32 {
+    let full = aa.len() as u32;
+    let max_nominal = aa.iter().map(|a| a.nominal).max().unwrap_or(0).max(0);
+    let saturated_from = max_nominal.min(graph_max + 1).max(1);
+    let mut acc = 0u32;
+    edge_start[0] = 0;
+    for m in 1..saturated_from {
+        edge_start[m as usize] = acc;
+        let mut c = 0u32;
+        for a in aa {
+            if m - a.nominal >= 0 {
+                c += 1;
+            }
+        }
+        acc += c;
+    }
+    for m in saturated_from..=graph_max {
+        edge_start[m as usize] = acc;
+        acc += full;
+    }
+    edge_start[graph_max as usize + 1] = acc;
+    acc
+}
+
 /// [`build_reverse_graph`] into a caller-owned [`Graph`], so a whole run reuses one set of buffers.
 ///
 /// Identical output to `build_reverse_graph` — every element of every array is overwritten, so the
@@ -141,8 +177,9 @@ pub fn build_reverse_graph_into(
     cleavage: PeptideCleavage<'_>,
 ) -> Vec<usize> {
     assert!(
-        aa.len() <= 256,
-        "graph edge alphabet is limited to 256 amino acids (got {})",
+        aa.len() <= u16::MAX as usize,
+        "graph edge alphabet is limited to {} amino acids (got {})",
+        u16::MAX,
         aa.len()
     );
     let graph_max = sinks
@@ -168,29 +205,7 @@ pub fn build_reverse_graph_into(
     // scanning the alphabet and fill the rest from the saturated count, instead of rescanning the
     // alphabet for every node and then prefix-summing in a second pass.
     graph.edge_start.resize(n + 1, 0);
-    let full = aa.len() as u32;
-    let max_nominal = aa.iter().map(|a| a.nominal).max().unwrap_or(0).max(0);
-    let saturated_from = max_nominal.min(graph_max + 1); // nodes below this need the real count
-    let mut acc = 0u32;
-    for m in 0..saturated_from {
-        graph.edge_start[m as usize] = acc;
-        if m >= 1 {
-            // Node 0 is the source and has no incoming edges, matching the fill loop below.
-            let mut c = 0u32;
-            for a in aa {
-                if m - a.nominal >= 0 {
-                    c += 1;
-                }
-            }
-            acc += c;
-        }
-    }
-    for m in saturated_from..=graph_max {
-        graph.edge_start[m as usize] = acc;
-        acc += full;
-    }
-    graph.edge_start[n] = acc;
-    let total = acc as usize;
+    let total = fill_edge_offsets(&mut graph.edge_start, graph_max, aa) as usize;
 
     // Fill edges in amino-acid order (the DP's summation order — preserved for bit-exact
     // reproduction). Edge scores are **candidate-independent** — they depend only on the shared
@@ -247,7 +262,7 @@ pub fn build_reverse_graph_into(
                 }
                 edge_prev[pos] = prev as u32;
                 edge_score[pos] = es;
-                edge_aa[pos] = ai as u8;
+                edge_aa[pos] = ai as u16;
                 pos += 1;
             }
         }
@@ -302,6 +317,60 @@ impl Graph {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    fn aa_with(nominals: &[i32]) -> Vec<Aa> {
+        nominals
+            .iter()
+            .map(|&nominal| Aa {
+                residue: b'A',
+                nominal,
+                accurate_mass: nominal as f32,
+                prob: 0.05,
+            })
+            .collect()
+    }
+
+    /// The saturating offset fill must agree with a naive per-node count on every alphabet shape,
+    /// including degenerate ones. A zero/negative-nominal alphabet drives `saturated_from` to 0 and
+    /// used to credit the source (node 0) with a full edge list, shifting every offset and leaving
+    /// one stale edge slot at the front.
+    #[test]
+    fn fused_offsets_match_the_naive_count() {
+        let cases: Vec<(&str, Vec<i32>)> = vec![
+            (
+                "standard",
+                standard_aa_nominal().into_iter().map(|(_, n)| n).collect(),
+            ),
+            ("all-zero nominal", vec![0]),
+            ("zero and positive", vec![0, 5, 9]),
+            ("negative nominal", vec![-3, -1]),
+            ("single heavy", vec![186]),
+            ("heavier than the graph", vec![500]),
+            ("duplicate nominals", vec![113, 113, 128, 128]),
+        ];
+        for (name, nominals) in cases {
+            let aa = aa_with(&nominals);
+            for graph_max in [1i32, 2, 57, 100, 200] {
+                let n = graph_max as usize + 1;
+                // Naive reference: node 0 has no incoming edges; node m has one per `nominal <= m`.
+                let mut want = vec![0u32; n + 1];
+                let mut acc = 0u32;
+                for m in 0..=graph_max {
+                    want[m as usize] = acc;
+                    if m >= 1 {
+                        acc += aa.iter().filter(|a| m - a.nominal >= 0).count() as u32;
+                    }
+                }
+                want[n] = acc;
+
+                let mut got = vec![u32::MAX; n + 1];
+                let total = fill_edge_offsets(&mut got, graph_max, &aa);
+                assert_eq!(got, want, "offsets differ: {name}, graph_max={graph_max}");
+                assert_eq!(total, acc, "total differs: {name}, graph_max={graph_max}");
+                assert_eq!(got[1], 0, "source must have no incoming edges: {name}");
+            }
+        }
+    }
 
     #[test]
     fn aa_nominal_masses() {
