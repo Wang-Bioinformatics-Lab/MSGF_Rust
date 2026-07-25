@@ -67,23 +67,61 @@ oxidation on M — the same run in `PERFORMANCE.md`), top peptide per scan vs MS
 
 | Rust run | same top peptide as MS-GF+ | target PSMs |
 |---|---|---|
-| `--param HCD_HighRes_Tryp.param` (MS-GF+'s model) | **92.7 %** (1161/1253) | 624 |
-| bundled model (no `--param`) | **66.6 %** (834/1253) | 609 |
+| `--param HCD_HighRes_Tryp.param` (MS-GF+'s model) | 92.7 % (1161/1253) | 624 |
+| bundled model (no `--param`) | 66.6 % (834/1253) | 609 |
 
-Swapping only the model changes the reported peptide on ~1/3 of scans (68.1 % agreement between
-the two Rust runs). Read that as a *divergence* measurement, not a quality verdict: F13 identifies
-essentially nothing (MS-GF+ itself finds one target PSM at 1 % FDR), so most of those scans are
-noise, and on noise the top hit is close to arbitrary — any two models will disagree. Agreement
-does climb with confidence (on MS-GF+'s 1e-9–1e-6 tier, n=373: 95.2 % with its model, 75.3 % with
-this one), but F13 has too few confident PSMs to resolve the high-confidence end. The quality
-evidence is the held-out benchmark table above, not this one.
+**Those two numbers do not measure the same thing, and neither is a quality score.** The first is
+implementation fidelity — same model, same arithmetic, so it should be ~100 % and the gap to it is
+ours to explain (isobaric ties, MS-GF+'s `FastScorer` pre-filter). The second is what a *different*
+scoring function does to the ranking, which is expected to differ.
+
+### Different is not wrong
+
+The obvious follow-up — when they disagree, who is right? — **F13 cannot answer**, because on F13
+nobody is right. Its top hits are at chance:
+
+| top hits on F13 | decoy fraction |
+|---|---|
+| MS-GF+ (Java) | **50.0 %** |
+| Rust + MS-GF+'s model | 50.4 % |
+| Rust + bundled | 51.6 % |
+
+A concatenated 50/50 target-decoy database means 50 % decoy = pure noise. MS-GF+ itself is exactly
+there; it finds one target PSM at 1 % FDR on the whole run. Even the 834 scans where both models
+*agree*, 51.1 % of the shared pick is a decoy — they agree on garbage. Restricted to the 419
+disagreements, MS-GF+'s pick is a decoy 47.7 % of the time and the bundled model's 52.7 %
+(McNemar χ² = 1.81, **p = 0.18** — not significant). So the disagreement is two coin flips landing
+differently, not one model erring.
+
+Where a right answer *does* exist, the two models are equivalent. On 4,000 held-out MassIVE-KB
+spectra (shard `2c76b72c…`, **not** in the training corpus) with ground-truth peptides and 5
+mass-identical shuffled decoys each:
+
+| | MS-GF+'s model | this model |
+|---|---|---|
+| true peptide ranked above its decoys | **0.9988** | **0.9988** |
+| IDs at a 1 %-decoy threshold | 3939 (98.5 %) | 3919 (98.0 %) |
+| median log₁₀ gap, decoy − target | 10.12 | 9.93 |
+| Spearman ρ on target log₁₀ SpecEValue | — | 0.973 |
+
+Identical discrimination, 0.5 pp fewer IDs at threshold. Reproduce with:
+
+```bash
+python3 validation/eval_trained_model.py library \
+  --mgf validation/data/training/<held-out shard>.mgf --n 4000 --decoys 5 \
+  --models validation/data/models/HCD_HighRes_Tryp.param \
+           rust/crates/msgf-scorer/models/MSGFRust_HCD_HighRes_Tryp_v1.param
+```
+
+(`fetch_reference_data.sh --training N` takes the first N shards by name, so fetching more than the
+20 pinned in `MSGFRust_HCD_HighRes_Tryp_v1.corpus.sha256` yields genuinely held-out ones.)
 
 Practical rule:
 
 - **Reproducing or diffing against MS-GF+ output** → pass `--param HCD_HighRes_Tryp.param`. The
-  default will not match, and that is expected.
+  default will not match, and that is expected — it is a different scoring function, not a wrong one.
 - **Running MSGF_Rust as its own search engine** → the bundled model is the right default: MIT-clean
-  and benchmarked competitive on held-out ground truth.
+  and statistically indistinguishable from MS-GF+'s on held-out ground truth.
 
 Either way the model in use is printed on stderr at the start of every run, so a result is always
 traceable to the tables that produced it.
