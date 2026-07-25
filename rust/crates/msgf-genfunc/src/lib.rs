@@ -93,6 +93,27 @@ fn axpy_with(
     unsafe { kernel(d, s, aa_prob) }
 }
 
+/// Fast path for the DP, whose destination range is constructed as the union of every shifted
+/// predecessor range. Unlike [`axpy_with`], no overlap clipping is needed: `src` is known to fit
+/// completely at `dst_lo`.
+#[inline(always)]
+fn axpy_full_with(
+    kernel: AxpyKernel,
+    dst: &mut [f64],
+    dst_min: i32,
+    src: &[f64],
+    src_min: i32,
+    score_diff: i32,
+    aa_prob: f64,
+) {
+    let dst_lo = (src_min + score_diff - dst_min) as usize;
+    debug_assert!(dst_lo + src.len() <= dst.len());
+    // Safety: the range construction guarantees that the whole source fits at `dst_lo`.
+    let d = unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr().add(dst_lo), src.len()) };
+    // Safety: `d` and `src` have the same length.
+    unsafe { kernel(d, src, aa_prob) }
+}
+
 /// Scalar windowing convolution for cold paths (sink merge, cleavage, `ScoreDist::add_prob_dist`).
 #[inline(always)]
 fn axpy(dst: &mut [f64], dst_min: i32, src: &[f64], src_min: i32, score_diff: i32, aa_prob: f64) {
@@ -382,9 +403,16 @@ pub fn compute_into(
                 if pd.len == 0 {
                     continue;
                 }
-                let src = &prev_part[pd.start as usize..pd.start as usize + pd.len as usize];
+                let src_start = pd.start as usize;
+                let src_len = pd.len as usize;
+                debug_assert!(src_start + src_len <= prev_part.len());
+                // Safety: every `NodeDist` is recorded immediately after its arena range is
+                // appended, and predecessor ranges are wholly before `start`.
+                let src = unsafe {
+                    std::slice::from_raw_parts(prev_part.as_ptr().add(src_start), src_len)
+                };
                 let score_diff = node_score + if is_sink { 0 } else { graph.edge_score[e] };
-                axpy_with(
+                axpy_full_with(
                     kernel,
                     cur,
                     cur_min,
