@@ -22,8 +22,8 @@ use msgf_chem::peptide::Residue;
 use msgf_chem::{mass, scaling, Tolerance};
 use msgf_db::enzyme::DigestParams;
 use msgf_db::fasta::ProteinDb;
-use msgf_genfunc::graph::{build_reverse_graph, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc};
+use msgf_genfunc::graph::{build_reverse_graph_into, Aa, PeptideCleavage};
+use msgf_genfunc::{compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc, Graph};
 use msgf_io::Spectrum;
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -125,6 +125,17 @@ pub struct SearchEngine<'a> {
     /// Summed database frequency of the cleavage residues — `probCleavageSites` in MS-GF+.
     prob_cleavage_sites: f64,
     warnings: Vec<String>,
+}
+
+/// Per-thread reusable buffers for one spectrum's generating function: the DP arena and the CSR
+/// de novo graph. Both are ~0.5 MB on the high-res grid and identical in shape from spectrum to
+/// spectrum, so one instance per rayon worker keeps the whole search allocation-free on this path.
+#[derive(Default)]
+pub struct SearchScratch {
+    /// Arena backing every intermediate node distribution (see [`DpScratch`]).
+    pub dp: DpScratch,
+    /// CSR graph buffers, overwritten in full by each `build_reverse_graph_into`.
+    pub graph: Graph,
 }
 
 impl<'a> SearchEngine<'a> {
@@ -239,7 +250,7 @@ impl<'a> SearchEngine<'a> {
         let mut out: Vec<Psm> = spectra
             .par_iter()
             .enumerate()
-            .map_init(DpScratch::default, |scratch, (i, spec)| {
+            .map_init(SearchScratch::default, |scratch, (i, spec)| {
                 self.search_spectrum(scratch, i, spec)
             })
             .flatten()
@@ -257,7 +268,7 @@ impl<'a> SearchEngine<'a> {
     /// Search one spectrum, trying every plausible charge and keeping the best matches overall.
     pub fn search_spectrum(
         &self,
-        scratch: &mut DpScratch,
+        scratch: &mut SearchScratch,
         spec_index: usize,
         spec: &Spectrum,
     ) -> Vec<Psm> {
@@ -284,7 +295,7 @@ impl<'a> SearchEngine<'a> {
 
     fn search_at_charge(
         &self,
-        scratch: &mut DpScratch,
+        scratch: &mut SearchScratch,
         spec_index: usize,
         spec: &Spectrum,
         mz: f64,
@@ -368,7 +379,9 @@ impl<'a> SearchEngine<'a> {
             },
             CleavageMode::Off => PeptideCleavage::NONE,
         };
-        let (mut graph, _) = build_reverse_graph(
+        let graph = &mut scratch.graph;
+        build_reverse_graph_into(
+            graph,
             &scored,
             &tables,
             max_p,
@@ -389,7 +402,8 @@ impl<'a> SearchEngine<'a> {
         let mut gfs: Vec<GenFunc> = Vec::with_capacity(sinks.len());
         for &p in &sinks {
             graph.recompute_node_scores(&tables, p, &[p]);
-            if let Some(gf) = compute_tail_into(scratch, &graph, &[p as usize], cleavage, threshold)
+            if let Some(gf) =
+                compute_tail_into(&mut scratch.dp, graph, &[p as usize], cleavage, threshold)
             {
                 gfs.push(gf);
             }

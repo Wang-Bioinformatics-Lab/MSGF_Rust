@@ -17,8 +17,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use msgf_chem::{mass, scaling};
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_into, compute_tail_into, merge_group, Cleavage, DpScratch};
+use msgf_genfunc::graph::{build_reverse_graph_into, standard_aa_nominal, Aa, PeptideCleavage};
+use msgf_genfunc::{compute_into, compute_tail_into, merge_group, Cleavage, DpScratch, Graph};
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
 
@@ -193,6 +193,7 @@ fn pass(
 ) {
     let mut acc = [(0u64, 0u64, 0u64); NSTAGE]; // per-stage (allocs, reallocs, bytes) deltas
     let mut scratch = DpScratch::default(); // reused across all spectra — no per-node alloc
+    let mut g = Graph::default(); // ditto for the CSR graph buffers
     macro_rules! timed {
         ($idx:expr, $field:ident, $body:block) => {{
             let a = snap();
@@ -217,8 +218,9 @@ fn pass(
         // Shared per-spectrum tables, built once for the largest candidate mass.
         let tables = timed!(2, tables, { scored.tables(s.pep_nominal) });
         // Build the edge structure ONCE (largest candidate); candidates only recompute node scores.
-        let (mut g, _) = timed!(3, graph, {
-            build_reverse_graph(
+        timed!(3, graph, {
+            build_reverse_graph_into(
+                &mut g,
                 &scored,
                 &tables,
                 s.pep_nominal,

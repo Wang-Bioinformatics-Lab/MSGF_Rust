@@ -157,7 +157,7 @@ impl TiltScratch {
             for e in e0..e1 {
                 let p = graph.edge_prev[e] as usize;
                 let w = ns + if is_sink { 0 } else { graph.edge_score[e] };
-                let f = graph.edge_prob[e] * wtab[(w - w_lo) as usize];
+                let f = graph.aa_prob[graph.edge_aa[e] as usize] * wtab[(w - w_lo) as usize];
                 self.b[p] += f * bi;
                 if derivs {
                     let wf = w as f64;

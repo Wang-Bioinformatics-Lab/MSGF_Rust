@@ -37,7 +37,7 @@ pub mod search;
 
 pub use index::{Candidate, PeptideIndex};
 pub use mods::{ModSet, ModSpec};
-pub use search::{Psm, SearchEngine, SearchParams};
+pub use search::{Psm, SearchEngine, SearchParams, SearchScratch};
 
 use msgf_fdr::{PsmRecord, TargetDecoyAnalysis};
 

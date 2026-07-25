@@ -182,17 +182,27 @@ impl ScoreDist {
 
 /// The de novo graph in flat CSR form: node scores plus a single edge list addressed by per-node
 /// offsets. Node 0 is the source; nodes are in topological (increasing nominal mass) order. The
-/// incoming edges of node `i` are the parallel slices `edge_prev/edge_score/edge_prob` over
+/// incoming edges of node `i` are the parallel slices `edge_prev/edge_score/edge_aa` over
 /// `edge_start[i]..edge_start[i + 1]`, in amino-acid insertion order — the order the DP sums them,
 /// preserved for bit-exact reproduction of MS-GF+. Replaces the old `Vec<Node>`/per-node
-/// `Vec<Edge>` (which reallocated on every `push`) with five buffers allocated once per graph.
+/// `Vec<Edge>` (which reallocated on every `push`) with flat buffers allocated once per graph.
+///
+/// The per-edge amino-acid **probability** is *not* stored per edge: it takes one of `|alphabet|`
+/// (~21) values, so the edge carries a one-byte index `edge_aa` into the `aa_prob` table and the DP
+/// reads `aa_prob[edge_aa[e] as usize]`. That is the identical `f64` bit pattern the old
+/// `edge_prob: Vec<f64>` held — the arithmetic is unchanged — at 1/8 the memory traffic. The index
+/// is explicit rather than derived from the nominal mass because distinct amino acids share nominal
+/// masses (I/L at 113, K/Q at 128), so two parallel edges can differ only by which one they are.
 #[derive(Debug, Clone, Default)]
 pub struct Graph {
     pub node_score: Vec<i32>,
     pub edge_start: Vec<u32>,
     pub edge_prev: Vec<u32>,
     pub edge_score: Vec<i32>,
-    pub edge_prob: Vec<f64>,
+    /// Per-edge index into [`Graph::aa_prob`], in amino-acid insertion order.
+    pub edge_aa: Vec<u8>,
+    /// Amino-acid background probabilities, indexed by [`Graph::edge_aa`].
+    pub aa_prob: Vec<f64>,
 }
 
 /// One node for [`Graph::from_adj`]: its node score and incoming `(prev, edge_score, aa_prob)` edges.
@@ -221,15 +231,30 @@ impl Graph {
             edge_start: Vec::with_capacity(n + 1),
             edge_prev: Vec::new(),
             edge_score: Vec::new(),
-            edge_prob: Vec::new(),
+            edge_aa: Vec::new(),
+            aa_prob: Vec::new(),
         };
         g.edge_start.push(0);
         for (ns, edges) in nodes {
             g.node_score.push(*ns);
             for &(prev, es, prob) in edges {
+                // Intern the probability by exact bit pattern — the DP must read back the same
+                // `f64`, so equality is `to_bits`, never `==` (which conflates ±0.0 and traps NaN).
+                let bits = prob.to_bits();
+                let idx = match g.aa_prob.iter().position(|p| p.to_bits() == bits) {
+                    Some(i) => i,
+                    None => {
+                        g.aa_prob.push(prob);
+                        g.aa_prob.len() - 1
+                    }
+                };
+                assert!(
+                    idx < 256,
+                    "Graph supports at most 256 distinct edge probabilities"
+                );
                 g.edge_prev.push(prev as u32);
                 g.edge_score.push(es);
-                g.edge_prob.push(prob);
+                g.edge_aa.push(idx as u8);
             }
             g.edge_start.push(g.edge_prev.len() as u32);
         }
@@ -702,6 +727,9 @@ fn dp<const AVX: bool, const PRUNED: bool, const FUSE: bool>(
     // Only visit nodes up to this candidate's largest sink. A graph built for the largest
     // isotope-error candidate serves the smaller ones by processing a prefix of it.
     let n = visited_nodes(graph, sinks);
+    // The ~21-entry probability table stays in L1; the per-edge stream is one byte instead of
+    // eight, and the value handed to `axpy` is the identical `f64` the old `edge_prob[e]` held.
+    let aa_prob = graph.aa_prob.as_slice();
 
     // Tail pruning: the per-node score floor `floor[i] = cut - max_rem[i]`. `cut` is clamped to the
     // best achievable score so the DeNovoScore cell always survives and `max_score()` stays exact
@@ -798,7 +826,7 @@ fn dp<const AVX: bool, const PRUNED: bool, const FUSE: bool>(
                     src_len: pd.len,
                     src_min: pd.min_score,
                     score_diff: combined,
-                    prob: graph.edge_prob[e],
+                    prob: aa_prob[graph.edge_aa[e] as usize],
                 };
                 n_desc += 1;
             }
@@ -888,7 +916,7 @@ fn dp<const AVX: bool, const PRUNED: bool, const FUSE: bool>(
                             src,
                             pd.min_score,
                             score_diff,
-                            graph.edge_prob[e],
+                            aa_prob[graph.edge_aa[e] as usize],
                         );
                     }
                 };
