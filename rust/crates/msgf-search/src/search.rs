@@ -22,8 +22,8 @@ use msgf_chem::peptide::Residue;
 use msgf_chem::{mass, scaling, Tolerance};
 use msgf_db::enzyme::DigestParams;
 use msgf_db::fasta::ProteinDb;
-use msgf_genfunc::graph::{build_reverse_graph, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch, GenFunc};
+use msgf_genfunc::graph::{build_reverse_graph_into, Aa, PeptideCleavage};
+use msgf_genfunc::{compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc, Graph};
 use msgf_io::Spectrum;
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
@@ -125,6 +125,17 @@ pub struct SearchEngine<'a> {
     /// Summed database frequency of the cleavage residues — `probCleavageSites` in MS-GF+.
     prob_cleavage_sites: f64,
     warnings: Vec<String>,
+}
+
+/// Per-thread reusable buffers for one spectrum's generating function: the DP arena and the CSR
+/// de novo graph. Both are ~0.5 MB on the high-res grid and identical in shape from spectrum to
+/// spectrum, so one instance per rayon worker keeps the whole search allocation-free on this path.
+#[derive(Default)]
+pub struct SearchScratch {
+    /// Arena backing every intermediate node distribution (see [`DpScratch`]).
+    pub dp: DpScratch,
+    /// CSR graph buffers, overwritten in full by each `build_reverse_graph_into`.
+    pub graph: Graph,
 }
 
 impl<'a> SearchEngine<'a> {
@@ -239,7 +250,7 @@ impl<'a> SearchEngine<'a> {
         let mut out: Vec<Psm> = spectra
             .par_iter()
             .enumerate()
-            .map_init(DpScratch::default, |scratch, (i, spec)| {
+            .map_init(SearchScratch::default, |scratch, (i, spec)| {
                 self.search_spectrum(scratch, i, spec)
             })
             .flatten()
@@ -257,7 +268,7 @@ impl<'a> SearchEngine<'a> {
     /// Search one spectrum, trying every plausible charge and keeping the best matches overall.
     pub fn search_spectrum(
         &self,
-        scratch: &mut DpScratch,
+        scratch: &mut SearchScratch,
         spec_index: usize,
         spec: &Spectrum,
     ) -> Vec<Psm> {
@@ -284,7 +295,7 @@ impl<'a> SearchEngine<'a> {
 
     fn search_at_charge(
         &self,
-        scratch: &mut DpScratch,
+        scratch: &mut SearchScratch,
         spec_index: usize,
         spec: &Spectrum,
         mz: f64,
@@ -298,7 +309,7 @@ impl<'a> SearchEngine<'a> {
         }
         let (ti_lo, ti_hi) = self.params.isotope_errors;
 
-        // --- the per-spectrum half: preprocess, score, and build the generating function once ---
+        // --- the per-spectrum half: preprocess and score the peaks ---
         let peaks: Vec<(f32, f32)> = spec
             .peaks
             .iter()
@@ -307,57 +318,14 @@ impl<'a> SearchEngine<'a> {
         let ranked = preprocess(self.model, charge, parent_mass, &peaks);
         let scored = ScoredSpectrum::from_ranked_peaks(self.model, charge, parent_mass, ranked);
 
-        // An isotope error of +k means the measured precursor is ~k Da high, so the true peptide
-        // mass is k nominal bins lower.
-        let sinks: Vec<i32> = (pep_nominal - ti_hi..=pep_nominal - ti_lo)
-            .filter(|&p| p > 0)
-            .collect();
-        let Some(&max_p) = sinks.iter().max() else {
-            return Vec::new();
-        };
-        let tables = scored.tables(max_p);
-        let peptide_cleavage = match self.cleavage_mode {
-            CleavageMode::CTerminal => PeptideCleavage {
-                cleave_at: &self.cleave_at,
-                credit: CLEAVAGE_CREDIT,
-                penalty: CLEAVAGE_PENALTY,
-            },
-            CleavageMode::Off => PeptideCleavage::NONE,
-        };
-        let (mut graph, _) = build_reverse_graph(
-            &scored,
-            &tables,
-            max_p,
-            &[max_p],
-            &self.alphabet,
-            peptide_cleavage,
-        );
-        // The *neighbouring* residue's cleavage is probabilistic (we do not know it a priori), so
-        // it weights the final distribution rather than an edge.
-        let cleavage = match self.cleavage_mode {
-            CleavageMode::CTerminal => Some(Cleavage {
-                credit: CLEAVAGE_CREDIT,
-                penalty: CLEAVAGE_PENALTY,
-                prob_cleavage_sites: self.prob_cleavage_sites,
-            }),
-            CleavageMode::Off => None,
-        };
-        let mut gfs: Vec<GenFunc> = Vec::with_capacity(sinks.len());
-        for &p in &sinks {
-            graph.recompute_node_scores(&tables, p, &[p]);
-            if let Some(gf) = compute_into(scratch, &graph, &[p as usize], cleavage) {
-                gfs.push(gf);
-            }
-        }
-        let Some(gf) = merge_group(&gfs) else {
-            return Vec::new();
-        };
-        let denovo = gf.max_score();
-
-        // --- the per-candidate half: every peptide in the precursor window is a tail lookup ---
+        // --- the per-candidate half: every peptide in the precursor window gets a RawScore ---
         // Identical peptides occurring in several proteins score identically, so they are grouped
         // into one match carrying every protein occurrence — that is what decides decoy status
         // (`plans/PLAN2.md` §1.3) and stops a repeated peptide consuming the whole top-N list.
+        //
+        // This runs *before* the generating function, which needs nothing from it but gains a great
+        // deal: the RawScore of the worst PSM we will report is the tail threshold, and the DP can
+        // then skip every score cell that provably cannot reach it (see `compute_tail_into`).
         let mut grouped: HashMap<String, Hit> = HashMap::new();
         let mut buf = ScoreBuffers::default();
         for k in ti_lo..=ti_hi {
@@ -383,13 +351,67 @@ impl<'a> SearchEngine<'a> {
             }
         }
         if grouped.is_empty() {
-            return Vec::new();
+            return Vec::new(); // no candidates — the whole generating function is skipped
         }
         let mut hits: Vec<(String, Hit)> = grouped.into_iter().collect();
         // Highest RawScore first; the SpecEValue tail is monotone in RawScore, so for a single
         // spectrum this is also best-SpecEValue order. The peptide key breaks ties deterministically.
         hits.sort_by(|a, b| b.1.raw_score.cmp(&a.1.raw_score).then(a.0.cmp(&b.0)));
         hits.truncate(self.params.num_matches);
+        // Every reported PSM is looked up at or above this score, so nothing below it is needed.
+        let threshold = hits.iter().map(|h| h.1.raw_score).min().unwrap_or(i32::MIN);
+
+        // --- the generating function: built once, tail-pruned to the reported PSMs' scores ---
+        // An isotope error of +k means the measured precursor is ~k Da high, so the true peptide
+        // mass is k nominal bins lower.
+        let sinks: Vec<i32> = (pep_nominal - ti_hi..=pep_nominal - ti_lo)
+            .filter(|&p| p > 0)
+            .collect();
+        let Some(&max_p) = sinks.iter().max() else {
+            return Vec::new();
+        };
+        let tables = scored.tables(max_p);
+        let peptide_cleavage = match self.cleavage_mode {
+            CleavageMode::CTerminal => PeptideCleavage {
+                cleave_at: &self.cleave_at,
+                credit: CLEAVAGE_CREDIT,
+                penalty: CLEAVAGE_PENALTY,
+            },
+            CleavageMode::Off => PeptideCleavage::NONE,
+        };
+        let graph = &mut scratch.graph;
+        build_reverse_graph_into(
+            graph,
+            &scored,
+            &tables,
+            max_p,
+            &[max_p],
+            &self.alphabet,
+            peptide_cleavage,
+        );
+        // The *neighbouring* residue's cleavage is probabilistic (we do not know it a priori), so
+        // it weights the final distribution rather than an edge.
+        let cleavage = match self.cleavage_mode {
+            CleavageMode::CTerminal => Some(Cleavage {
+                credit: CLEAVAGE_CREDIT,
+                penalty: CLEAVAGE_PENALTY,
+                prob_cleavage_sites: self.prob_cleavage_sites,
+            }),
+            CleavageMode::Off => None,
+        };
+        let mut gfs: Vec<GenFunc> = Vec::with_capacity(sinks.len());
+        for &p in &sinks {
+            graph.recompute_node_scores(&tables, p, &[p]);
+            if let Some(gf) =
+                compute_tail_into(&mut scratch.dp, graph, &[p as usize], cleavage, threshold)
+            {
+                gfs.push(gf);
+            }
+        }
+        let Some(gf) = merge_group(&gfs) else {
+            return Vec::new();
+        };
+        let denovo = gf.max_score();
 
         let db_size = self.db_size();
         hits.into_iter()

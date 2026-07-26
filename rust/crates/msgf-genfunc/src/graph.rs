@@ -111,47 +111,103 @@ pub fn build_reverse_graph(
     aa: &[Aa],
     cleavage: PeptideCleavage<'_>,
 ) -> (Graph, Vec<usize>) {
-    let graph_max = sinks
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(complement_mass)
-        .max(complement_mass);
-    let n = graph_max as usize + 1;
-    // `sinks` is tiny (the isotope range), so a linear check beats allocating a HashSet.
-    let is_sink = |m: i32| sinks.contains(&m);
+    let mut graph = Graph::default();
+    let sink_idx = build_reverse_graph_into(
+        &mut graph,
+        scored,
+        tables,
+        complement_mass,
+        sinks,
+        aa,
+        cleavage,
+    );
+    (graph, sink_idx)
+}
 
-    let mut node_score = vec![0i32; n];
-    for m in 1..graph_max {
-        if is_sink(m) || m >= complement_mass {
-            continue; // sinks and out-of-range nodes score 0
-        }
-        node_score[m as usize] = msgf_chem::round_half_up(
-            tables.prefix[(complement_mass - m) as usize] + tables.suffix[m as usize],
-        );
-    }
-
-    // CSR edges, built in two passes with no per-node allocation. Pass 1: count incoming edges per
-    // node (one per amino acid whose predecessor mass is >= 0) and prefix-sum into `edge_start`.
-    let mut edge_start = vec![0u32; n + 1];
-    for m in 1..=graph_max {
+/// Fill the CSR offsets `edge_start[0..=graph_max + 1]` and return the total edge count.
+///
+/// The incoming-edge count of node `m` is a pure function of the node mass — the number of amino
+/// acids with `nominal <= m` — so it saturates at `|aa|` for every node at or above the heaviest
+/// residue (only ~186 of the ~1,500 nodes are below it). Count those few by scanning the alphabet
+/// and fill the rest from the saturated count, rather than rescanning the alphabet for every node
+/// and prefix-summing in a second pass.
+///
+/// Node 0 is the source and always has zero incoming edges. That is why `saturated_from` is clamped
+/// to at least 1: an alphabet whose nominal masses are all `<= 0` drives it to 0, and without the
+/// clamp the saturating loop would credit the source with `|aa|` edges and shift every subsequent
+/// offset by that much (`fused_offsets_match_the_naive_count` pins this).
+fn fill_edge_offsets(edge_start: &mut [u32], graph_max: i32, aa: &[Aa]) -> u32 {
+    let full = aa.len() as u32;
+    let max_nominal = aa.iter().map(|a| a.nominal).max().unwrap_or(0).max(0);
+    let saturated_from = max_nominal.min(graph_max + 1).max(1);
+    let mut acc = 0u32;
+    edge_start[0] = 0;
+    for m in 1..saturated_from {
+        edge_start[m as usize] = acc;
         let mut c = 0u32;
         for a in aa {
             if m - a.nominal >= 0 {
                 c += 1;
             }
         }
-        edge_start[m as usize] = c; // stash the per-node count, converted to offsets below
-    }
-    let mut acc = 0u32;
-    for slot in edge_start.iter_mut() {
-        let c = *slot;
-        *slot = acc;
         acc += c;
     }
-    let total = acc as usize;
+    for m in saturated_from..=graph_max {
+        edge_start[m as usize] = acc;
+        acc += full;
+    }
+    edge_start[graph_max as usize + 1] = acc;
+    acc
+}
 
-    // Pass 2: fill edges in amino-acid order (the DP's summation order — preserved for bit-exact
+/// [`build_reverse_graph`] into a caller-owned [`Graph`], so a whole run reuses one set of buffers.
+///
+/// Identical output to `build_reverse_graph` — every element of every array is overwritten, so the
+/// incoming contents of `graph` never affect the result. This is the graph-side analogue of
+/// [`crate::DpScratch`]: the five CSR buffers are ~0.5 MB per spectrum on the F13 grid, which is
+/// large enough that glibc services them with `mmap`/`munmap` and the writes fault in fresh zero
+/// pages every time. Hold one `Graph` across the whole run and the per-spectrum allocation is nil.
+pub fn build_reverse_graph_into(
+    graph: &mut Graph,
+    scored: &ScoredSpectrum,
+    tables: &SpectrumTables,
+    complement_mass: i32,
+    sinks: &[i32],
+    aa: &[Aa],
+    cleavage: PeptideCleavage<'_>,
+) -> Vec<usize> {
+    assert!(
+        aa.len() <= u16::MAX as usize,
+        "graph edge alphabet is limited to {} amino acids (got {})",
+        u16::MAX,
+        aa.len()
+    );
+    let graph_max = sinks
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(complement_mass)
+        .max(complement_mass)
+        .max(0);
+    let n = graph_max as usize + 1;
+
+    // Node scores: exactly the per-candidate computation, so share the one implementation.
+    graph.node_score.resize(n, 0);
+    graph.recompute_node_scores(tables, complement_mass, sinks);
+
+    // The probability table the per-edge `edge_aa` index addresses.
+    graph.aa_prob.clear();
+    graph.aa_prob.extend(aa.iter().map(|a| a.prob));
+
+    // CSR offsets. The incoming-edge count of node `m` is a pure function of the node mass — the
+    // number of amino acids with `nominal <= m` — so it saturates at `|aa|` for every node at or
+    // above the heaviest residue (~186 of the ~1500 nodes are below it). Count those few by
+    // scanning the alphabet and fill the rest from the saturated count, instead of rescanning the
+    // alphabet for every node and then prefix-summing in a second pass.
+    graph.edge_start.resize(n + 1, 0);
+    let total = fill_edge_offsets(&mut graph.edge_start, graph_max, aa) as usize;
+
+    // Fill edges in amino-acid order (the DP's summation order — preserved for bit-exact
     // reproduction). Edge scores are **candidate-independent** — they depend only on the shared
     // node masses and the amino acid, never on `complement_mass` or which node is the sink — so the
     // edge arrays are built once and reused across the isotope-error candidates (see
@@ -161,40 +217,58 @@ pub fn build_reverse_graph(
     // Node masses come from the shared `tables` (one peak lookup per node per spectrum, not one per
     // incident edge per graph). `m, prev` are always in-range, so the `edge_score` bounds guard
     // never fires; `edge_score_with` on the resolved masses is equivalent.
-    let node_mass = &tables.node_mass;
-    let mut edge_prev = vec![0u32; total];
-    let mut edge_score = vec![0i32; total];
-    let mut edge_prob = vec![0f64; total];
-    for m in 1..=graph_max {
-        let mut pos = edge_start[m as usize] as usize;
-        for a in aa {
-            let prev = m - a.nominal;
-            if prev < 0 {
-                continue;
+    graph.edge_prev.resize(total, 0);
+    graph.edge_score.resize(total, 0);
+    graph.edge_aa.resize(total, 0);
+    if total > 0 {
+        // `getEdgeScoreInt` only consults the mass error when *both* endpoints matched a peak
+        // (`index == 3`); otherwise it is `round(ionExistenceScore(index))`, a per-spectrum
+        // constant. Most nodes on this grid match no peak, so resolve those three constants once
+        // and keep the arithmetic for the edges that actually need it. Same integers either way.
+        let base = [
+            scored.edge_score_with(-1.0, -1.0, 0.0), // index 0: neither endpoint matched
+            scored.edge_score_with(0.0, -1.0, 0.0),  // index 1: cur matched, prev did not
+            scored.edge_score_with(-1.0, 0.0, 0.0),  // index 2: prev matched, cur did not
+        ];
+        let node_mass = &tables.node_mass;
+        let Graph {
+            edge_start,
+            edge_prev,
+            edge_score,
+            edge_aa,
+            ..
+        } = graph;
+        for m in 1..=graph_max {
+            let mut pos = edge_start[m as usize] as usize;
+            let cur_mass = node_mass[m as usize];
+            let cur_matched = cur_mass >= 0.0;
+            for (ai, a) in aa.iter().enumerate() {
+                let prev = m - a.nominal;
+                if prev < 0 {
+                    continue;
+                }
+                let prev_mass = node_mass[prev as usize];
+                let mut es = if cur_matched && prev_mass >= 0.0 {
+                    scored.edge_score_with(cur_mass, prev_mass, a.accurate_mass)
+                } else if cur_matched {
+                    base[1]
+                } else if prev_mass >= 0.0 {
+                    base[2]
+                } else {
+                    base[0]
+                };
+                if prev == 0 {
+                    es += cleavage.score(a.residue);
+                }
+                edge_prev[pos] = prev as u32;
+                edge_score[pos] = es;
+                edge_aa[pos] = ai as u16;
+                pos += 1;
             }
-            let mut es = scored.edge_score_with(
-                node_mass[m as usize],
-                node_mass[prev as usize],
-                a.accurate_mass,
-            );
-            if prev == 0 {
-                es += cleavage.score(a.residue);
-            }
-            edge_prev[pos] = prev as u32;
-            edge_score[pos] = es;
-            edge_prob[pos] = a.prob;
-            pos += 1;
         }
     }
 
-    let graph = Graph {
-        node_score,
-        edge_start,
-        edge_prev,
-        edge_score,
-        edge_prob,
-    };
-    (graph, sinks.iter().map(|&s| s as usize).collect())
+    sinks.iter().map(|&s| s as usize).collect()
 }
 
 impl Graph {
@@ -216,16 +290,25 @@ impl Graph {
             .unwrap_or(complement_mass)
             .max(complement_mass);
         let is_sink = |m: i32| sinks.contains(&m);
-        for s in self.node_score.iter_mut() {
+        // The loop below assigns every node in `1..graph_max`, so only the source, the skipped
+        // nodes, and the tail above `graph_max` need clearing — a blanket memset of the whole array
+        // (which is then immediately overwritten) is wasted work, not correctness.
+        let ns = &mut self.node_score;
+        if let Some(s) = ns.first_mut() {
             *s = 0;
         }
         for m in 1..graph_max {
-            if is_sink(m) || m >= complement_mass {
-                continue;
-            }
-            self.node_score[m as usize] = msgf_chem::round_half_up(
-                tables.prefix[(complement_mass - m) as usize] + tables.suffix[m as usize],
-            );
+            ns[m as usize] = if is_sink(m) || m >= complement_mass {
+                0 // sinks and out-of-range nodes score 0
+            } else {
+                msgf_chem::round_half_up(
+                    tables.prefix[(complement_mass - m) as usize] + tables.suffix[m as usize],
+                )
+            };
+        }
+        let tail = (graph_max.max(0) as usize).min(ns.len());
+        for s in ns[tail..].iter_mut() {
+            *s = 0;
         }
     }
 }
@@ -234,6 +317,60 @@ impl Graph {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    fn aa_with(nominals: &[i32]) -> Vec<Aa> {
+        nominals
+            .iter()
+            .map(|&nominal| Aa {
+                residue: b'A',
+                nominal,
+                accurate_mass: nominal as f32,
+                prob: 0.05,
+            })
+            .collect()
+    }
+
+    /// The saturating offset fill must agree with a naive per-node count on every alphabet shape,
+    /// including degenerate ones. A zero/negative-nominal alphabet drives `saturated_from` to 0 and
+    /// used to credit the source (node 0) with a full edge list, shifting every offset and leaving
+    /// one stale edge slot at the front.
+    #[test]
+    fn fused_offsets_match_the_naive_count() {
+        let cases: Vec<(&str, Vec<i32>)> = vec![
+            (
+                "standard",
+                standard_aa_nominal().into_iter().map(|(_, n)| n).collect(),
+            ),
+            ("all-zero nominal", vec![0]),
+            ("zero and positive", vec![0, 5, 9]),
+            ("negative nominal", vec![-3, -1]),
+            ("single heavy", vec![186]),
+            ("heavier than the graph", vec![500]),
+            ("duplicate nominals", vec![113, 113, 128, 128]),
+        ];
+        for (name, nominals) in cases {
+            let aa = aa_with(&nominals);
+            for graph_max in [1i32, 2, 57, 100, 200] {
+                let n = graph_max as usize + 1;
+                // Naive reference: node 0 has no incoming edges; node m has one per `nominal <= m`.
+                let mut want = vec![0u32; n + 1];
+                let mut acc = 0u32;
+                for m in 0..=graph_max {
+                    want[m as usize] = acc;
+                    if m >= 1 {
+                        acc += aa.iter().filter(|a| m - a.nominal >= 0).count() as u32;
+                    }
+                }
+                want[n] = acc;
+
+                let mut got = vec![u32::MAX; n + 1];
+                let total = fill_edge_offsets(&mut got, graph_max, &aa);
+                assert_eq!(got, want, "offsets differ: {name}, graph_max={graph_max}");
+                assert_eq!(total, acc, "total differs: {name}, graph_max={graph_max}");
+                assert_eq!(got[1], 0, "source must have no incoming edges: {name}");
+            }
+        }
+    }
 
     #[test]
     fn aa_nominal_masses() {

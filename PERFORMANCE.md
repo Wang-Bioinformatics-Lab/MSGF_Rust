@@ -10,14 +10,23 @@ approximation trade-off.
 
 | Workload (per spectrum: preprocess → scored spectrum → generating function → SpecEValue) | Throughput | Time / 1,406 spectra |
 |---|--:|--:|
-| **MS-GF+ (Java), 1 core** (JIT-warm) | 72 spectra/s | 19.4 s |
-| **MSGF_Rust, 1 core** | **312 spectra/s** | 4.50 s |
+| **MS-GF+ (Java), 1 core** (JIT-warm) | 74 spectra/s | 19.0 s |
+| **MSGF_Rust, 1 core** — full distribution | **436 spectra/s** | 3.23 s |
+| **MSGF_Rust, 1 core** — tail-pruned (what `msgf search` drives) | **572 spectra/s** | 2.46 s |
 | **MSGF_Rust, 32 cores** (rayon) | **4,209 spectra/s** | 0.33 s |
 
-MSGF_Rust is **~4.3× faster single-threaded** than JIT-warm Java and scales near-linearly across
-cores (this stage is embarrassingly parallel). These are the numbers **after optimization**; the
-first working port was ~89 spectra/s (~1.23× Java), so the optimization work below is a further
-**~3.5× single-thread** (and ~3.0× at 32 cores) on top of that — with **no loss of fidelity**.
+MSGF_Rust is **~7.7× faster single-threaded** than JIT-warm Java on the path a search actually takes,
+and scales near-linearly across cores (this stage is embarrassingly parallel). These are the numbers
+**after optimization**; the first working port was ~89 spectra/s (~1.2× Java), so the work below is a
+further **~6.4× single-thread** on top of that — with **no loss of fidelity**.
+
+**Two rows, because there are two workloads.** The generating function can be built either as the
+full score distribution or pruned to a threshold the caller supplies. `msgf search` and
+`msgf rescore` both supply one (the lowest RawScore they will report), and the pruned DP is
+bit-identical to the full one at and above it — so the 572 spectra/s row is the honest per-spectrum
+cost of a search, and the 436 row is what a caller that needs the whole distribution pays. The
+pruned figure is also a *floor*: F13 identifies essentially nothing, which is the worst case for
+threshold pruning (see `research-trials/measurement-traps.md` §1).
 
 ## Platform
 
@@ -60,29 +69,36 @@ Java uses `FlexAminoAcidGraph` + `GeneratingFunctionGroup`; Rust uses `msgf-genf
 
 ### Full SpecEValue per spectrum
 
-| | Rust 1-core | Java 1-core | Rust 32-core |
-|---|--:|--:|--:|
-| throughput | 312 spectra/s | 72 spectra/s | 4,209 spectra/s |
-| 1,406 spectra | 4.50 s | 19.4 s | 0.33 s (wall) |
+| | Rust 1-core, pruned | Rust 1-core, full | Java 1-core | Rust 32-core |
+|---|--:|--:|--:|--:|
+| throughput | 572 spectra/s | 436 spectra/s | 74 spectra/s | 4,209 spectra/s |
+| 1,406 spectra | 2.46 s | 3.23 s | 19.0 s | 0.33 s (wall) |
 
-Java numbers are from JIT-warm passes (a fresh JVM's first pass was ~64 spectra/s before warm-up)
-and are the same reference figures as before optimization — only the Rust side changed.
+Each figure is the mean of three runs on an otherwise-idle machine (spread ≤1.5%). Java numbers are
+from JIT-warm passes 1–4 of five, discarding the cold pass (which ran at 66 spectra/s); re-measured
+2026-07-25 on the machine described above, confirming the 72 spectra/s recorded previously. The
+32-core row predates the current optimizations and is due a re-measurement.
 
 ### Where the Rust time goes now
 
-Single-thread, over the 1,406-spectrum pass (from `examples/profile`), the SpecEValue pipeline
-breaks down as:
+Single-thread, over the 1,406-spectrum pass (from `examples/profile -- thresh`), the SpecEValue
+pipeline breaks down as:
 
 | Stage | Share |
 |---|--:|
-| preprocess + scored-spectrum | ~1% |
-| per-spectrum node tables (node mass, prefix/suffix node scores) | ~18% |
-| graph build (CSR edges, once per spectrum) | ~11% |
-| **generating-function DP (score-distribution convolution)** | **~70%** |
+| preprocess + scored-spectrum | ~1.5% |
+| per-spectrum node tables (node mass, prefix/suffix node scores) | 4.5% |
+| graph build (CSR edges, once per spectrum) | 9.6% |
+| **generating-function DP (score-distribution convolution)** | **83.5%** |
 
-The DP now dominates; graph construction and the (previously dominant) scoring lookups were driven
-down by the changes below. Allocation is effectively gone: ~19.8M allocator calls per run in the
-first port → **~0** (a few dozen), and allocation traffic 9.0 GB → ~0.75 GB.
+The DP dominates more than ever: graph construction and the (previously dominant) scoring lookups
+have been driven down by the changes below, so **even reducing every other stage to zero is now worth
+only ~1.17×**. Allocation is effectively gone: ~19.8M allocator calls per run in the first port →
+**~0** (a few dozen), and allocation traffic 9.0 GB → **0.07 GB**.
+
+Past roughly 6×, the DP cannot be made faster by pruning cells — there is a measured per-edge floor
+of ~2.9 ns (`research-trials/dp-pruning-limits.md` §4). The next step is a gate that skips the DP
+entirely for spectra that cannot be significant; see `plans/PLAN3.md` §5.2.
 
 ## How it got fast (all bit-exact)
 
@@ -105,17 +121,40 @@ it.
 3. **Vectorized the DP convolution.** The shift-add kernel runs over contiguous slices through a
    runtime-selected **AVX** kernel (packed multiply + add, no FMA contraction), so the default release
    build is vectorized without a `target-cpu` flag and stays byte-identical to the scalar path.
+4. **Hoisted the per-spectrum node tables.** `score_from_table` was linear-scanning 92 partitions and
+   then comparing ion *name strings*, 8.8M times per run, for a value that does not depend on the
+   node. Caching it per `(segment, ion, rank bin)` and inverting the loop to sweep ions rather than
+   nodes took that stage from 844 ms to 111 ms.
+5. **Gave the DP a threshold.** The tail-pruned DP drops every score cell that provably cannot reach
+   the lowest RawScore the caller will report — bit-identical at and above it. It existed but had no
+   caller: `search` built the generating function *before* scoring candidates. Since the DP depends on
+   nothing the candidates produce, swapping the two halves is free and yields the threshold. 2.01×
+   fewer cells, 1.37× on the DP, and spectra with no candidates skip it entirely.
+6. **Fused the DP's two per-edge passes.** The score-range pass and the convolution each gathered the
+   same `NodeDist` and re-derived the same shift; the range pass now caches the resolved descriptor
+   for the convolution to consume. ~1.04× unpruned, ~1.06× pruned — loads removed, arithmetic
+   untouched.
+7. **Made graph construction allocation-free.** One reusable set of CSR buffers for the whole run
+   instead of ~0.5 MB per spectrum; the per-edge amino-acid *probability* replaced by a two-byte index
+   into a ~21-entry table; and the edge-count pass collapsed using the fact that a node's in-degree
+   saturates above the heaviest residue. 558 → 238 ms, and 682 MB of allocation traffic → 3.4 MB.
+   The ablation is worth recording: the memory work was 1.14× of that, and hoisting arithmetic out of
+   the fill loop was the other 2.0×.
 
 ### CPU-hours
 
 For the SpecEValue stage (the part MSGF_Rust implements), 1-core CPU-time:
 
-| | per 1,406 spectra | projected per 100,000 spectra |
-|---|--:|--:|
-| MSGF_Rust (SpecEValue) | 0.00125 CPU-hr | **0.089 CPU-hr** |
-| MS-GF+ generating function | 0.0054 CPU-hr | 0.39 CPU-hr |
+| | per 1,406 spectra | projected per 100,000 spectra | per 1,000,000 spectra |
+|---|--:|--:|--:|
+| MSGF_Rust — tail-pruned (search path) | 0.00068 CPU-hr | **0.049 CPU-hr** | 0.49 CPU-hr |
+| MSGF_Rust — full distribution | 0.00090 CPU-hr | 0.064 CPU-hr | 0.64 CPU-hr |
+| MS-GF+ generating function | 0.0053 CPU-hr | 0.375 CPU-hr | 3.75 CPU-hr |
 
-On the 32-core box, MSGF_Rust scores the SpecEValue for 100k spectra in **~24 s of wall-clock**.
+A million spectra cost MS-GF+ **3.75 CPU-hours** in the generating function alone; MSGF_Rust does the
+same work in **0.49**. On the 32-core box, MSGF_Rust scores the SpecEValue for 100k spectra in **~24 s
+of wall-clock** (throughput scales ~13.4×, not 32× — the stage is memory-bound, so quote CPU-hours,
+which are stable, and derive wall-clock from the measured scaling factor).
 
 ### End-to-end database search (`msgf search` vs MS-GF+)
 
@@ -164,7 +203,8 @@ Both find the same single target PSM at 1% FDR (F13 identifies essentially nothi
 # Rust (needs validation/data/ — run validation/fetch_reference_data.sh)
 cd rust
 cargo bench -p msgf-genfunc --bench genfunc         # SpecEValue: 1-core + 32-core (rayon)
-cargo run  -p msgf-genfunc --example profile --release   # per-stage time + allocation breakdown
+cargo run  -p msgf-genfunc --example profile --release            # per-stage time + allocations
+cargo run  -p msgf-genfunc --example profile --release -- thresh  # the tail-pruned (search) path
 
 # Java generating-function timing (same workload, single-thread)
 cd validation/reference/java

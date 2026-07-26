@@ -11,13 +11,14 @@
 //! Needs the gitignored validation/data/. This file is a throwaway profiling aid.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use msgf_chem::{mass, scaling};
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_into, merge_group, Cleavage, DpScratch};
+use msgf_genfunc::graph::{build_reverse_graph_into, standard_aa_nominal, Aa, PeptideCleavage};
+use msgf_genfunc::{compute_into, compute_tail_into, merge_group, Cleavage, DpScratch, Graph};
 use msgf_scorer::preprocess::preprocess;
 use msgf_scorer::scored_spectrum::ScoredSpectrum;
 
@@ -69,6 +70,39 @@ struct Prepared {
     parent_mass: f32,
     pep_nominal: i32,
     raw: Vec<(f32, f32)>,
+    /// MS-GF+'s own top-hit RawScore for this scan, when the F13 golden has one. In `thresh` mode
+    /// this is the tail threshold — what a real search knows once it has scored its candidates.
+    golden_score: Option<i32>,
+}
+
+/// Best observed RawScore (`MSGFScore`) per scan, from the frozen MS-GF+ F13 output.
+fn golden_rawscore() -> HashMap<i32, i32> {
+    let mut out = HashMap::new();
+    let Ok(text) = std::fs::read_to_string(repo("validation/golden/iprg2013_F13.tsv")) else {
+        eprintln!("note: F13 golden absent — `thresh` mode has no thresholds to apply");
+        return out;
+    };
+    let mut lines = text.lines();
+    let Some(hdr) = lines.next().map(|l| l.split('\t').collect::<Vec<_>>()) else {
+        return out;
+    };
+    let (Some(ci), Some(cs)) = (
+        hdr.iter().position(|h| *h == "ScanNum"),
+        hdr.iter().position(|h| *h == "MSGFScore"),
+    ) else {
+        return out;
+    };
+    for line in lines {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() <= ci.max(cs) {
+            continue;
+        }
+        if let (Ok(scan), Ok(sc)) = (f[ci].parse::<i32>(), f[cs].parse::<i32>()) {
+            let e = out.entry(scan).or_insert(i32::MIN);
+            *e = (*e).max(sc);
+        }
+    }
+    out
 }
 
 fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
@@ -79,6 +113,7 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
         return None;
     }
     let model = msgf_scorer::read_param_file(&param).unwrap();
+    let golden = golden_rawscore();
     let spectra: Vec<Prepared> = msgf_io::read_mgf_file(&mgf)
         .unwrap()
         .into_iter()
@@ -90,6 +125,7 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
             if !(200..=6000).contains(&pep_nominal) {
                 return None;
             }
+            let scan: Option<i32> = s.scan.as_deref().and_then(|v| v.parse().ok());
             Some(Prepared {
                 charge,
                 parent_mass,
@@ -99,6 +135,7 @@ fn load() -> Option<(msgf_scorer::ScoringModel, Vec<Prepared>, Vec<Aa>)> {
                     .iter()
                     .map(|p| (p.mz as f32, p.intensity as f32))
                     .collect(),
+                golden_score: scan.and_then(|sc| golden.get(&sc).copied()),
             })
         })
         .collect();
@@ -152,9 +189,11 @@ fn pass(
     aa: &[Aa],
     st: &mut Stats,
     census: Option<&mut [(u64, u64, u64); NSTAGE]>,
+    thresh: bool,
 ) {
     let mut acc = [(0u64, 0u64, 0u64); NSTAGE]; // per-stage (allocs, reallocs, bytes) deltas
     let mut scratch = DpScratch::default(); // reused across all spectra — no per-node alloc
+    let mut g = Graph::default(); // ditto for the CSR graph buffers
     macro_rules! timed {
         ($idx:expr, $field:ident, $body:block) => {{
             let a = snap();
@@ -179,8 +218,9 @@ fn pass(
         // Shared per-spectrum tables, built once for the largest candidate mass.
         let tables = timed!(2, tables, { scored.tables(s.pep_nominal) });
         // Build the edge structure ONCE (largest candidate); candidates only recompute node scores.
-        let (mut g, _) = timed!(3, graph, {
-            build_reverse_graph(
+        timed!(3, graph, {
+            build_reverse_graph_into(
+                &mut g,
                 &scored,
                 &tables,
                 s.pep_nominal,
@@ -197,7 +237,12 @@ fn pass(
             st.edges += g.n_edges() as u64;
             st.graphs += 1;
             let gf = timed!(4, compute, {
-                compute_into(&mut scratch, &g, &sinks, Some(CLEAVE))
+                match s.golden_score.filter(|_| thresh) {
+                    // What a search does: the worst RawScore it will report is the tail threshold,
+                    // and every cell that provably cannot reach it is skipped. Bit-identical above.
+                    Some(t) => compute_tail_into(&mut scratch, &g, &sinks, Some(CLEAVE), t),
+                    None => compute_into(&mut scratch, &g, &sinks, Some(CLEAVE)),
+                }
             });
             st.arena_cells += scratch.arena_len() as u64;
             st.reachable += scratch.reachable() as u64;
@@ -206,8 +251,11 @@ fn pass(
             }
         }
         let merged = timed!(5, merge, { merge_group(&gfs) });
+        // Query at the threshold the DP was pruned to — below it the cells are absent by
+        // construction (`GenFunc::valid_from`), so asking lower would be meaningless.
+        let at = s.golden_score.filter(|_| thresh).unwrap_or(30);
         timed!(6, tail, {
-            std::hint::black_box(merged.map(|g| g.spectral_probability(30)));
+            std::hint::black_box(merged.map(|g| g.spectral_probability(at)));
         });
     }
 
@@ -221,19 +269,25 @@ fn main() {
         return;
     };
     let n = spectra.len();
+    let arg = std::env::args().nth(1);
+    // `thresh`: drive the DP the way a search does — tail-pruned to MS-GF+'s own observed RawScore
+    // per scan. This is the honest per-spectrum cost of a real search; the default (unpruned) mode
+    // is the ceiling, since no caller of the full distribution has a threshold to offer.
+    let thresh = arg.as_deref() == Some("thresh");
+    let with_threshold = spectra.iter().filter(|s| s.golden_score.is_some()).count();
 
     // "hot" mode: just hammer the single-thread throughput loop for `perf stat`.
-    if std::env::args().nth(1).as_deref() == Some("hot") {
+    if arg.as_deref() == Some("hot") {
         for _ in 0..20 {
             let mut st = Stats::default();
-            pass(&model, &spectra, &aa, &mut st, None);
+            pass(&model, &spectra, &aa, &mut st, None, false);
         }
         return;
     }
 
     // Warm up.
     let mut warm = Stats::default();
-    pass(&model, &spectra, &aa, &mut warm, None);
+    pass(&model, &spectra, &aa, &mut warm, None, thresh);
 
     // Timing pass (counting off) — take the best of 3 to reduce noise.
     COUNT_ON.store(false, Ordering::Relaxed);
@@ -241,7 +295,7 @@ fn main() {
     for _ in 0..3 {
         let mut st = Stats::default();
         let t = Instant::now();
-        pass(&model, &spectra, &aa, &mut st, None);
+        pass(&model, &spectra, &aa, &mut st, None, thresh);
         let total = t.elapsed();
         if best.is_none_or(|b| total < b_total(&b)) {
             best = Some(st);
@@ -256,7 +310,7 @@ fn main() {
     COUNT_ON.store(true, Ordering::Relaxed);
     let mut cst = Stats::default();
     let mut census = [(0u64, 0u64, 0u64); NSTAGE];
-    pass(&model, &spectra, &aa, &mut cst, Some(&mut census));
+    pass(&model, &spectra, &aa, &mut cst, Some(&mut census), thresh);
     COUNT_ON.store(false, Ordering::Relaxed);
 
     let stages = [
@@ -274,6 +328,14 @@ fn main() {
     let total: Duration = times.iter().sum();
 
     println!("\n=== SpecEValue profile — {n} F13 spectra, single-thread, nominal grid ===");
+    if thresh {
+        println!(
+            "mode:         TAIL-PRUNED to MS-GF+'s observed RawScore ({with_threshold}/{n} spectra \
+             have one; the rest run unpruned)"
+        );
+    } else {
+        println!("mode:         full distribution (no threshold) — run `-- thresh` for the search-like path");
+    }
     println!(
         "graphs built: {}  ({:.2} per spectrum)",
         st.graphs,
