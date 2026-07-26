@@ -9,9 +9,12 @@ records what was measured; PLAN3 records what to do about it.
 
 ## Generating Function and Scoring Pipeline
 
-See the [full optimization trial report](research-trials/generating-function-optimization.md), the
-per-trial data behind it ([node tables](research-trials/spec-tables-node-scoring.md),
-[saddlepoint tuning](research-trials/saddlepoint-tuning-data.md)), and
+Start with the [consolidation report](research-trials/consolidated-speedups.md) — it is the current
+state of the branch and the only place these results are measured *in combination*. Behind it sit
+the [full optimization trial report](research-trials/generating-function-optimization.md), the
+per-trial data ([node tables](research-trials/spec-tables-node-scoring.md),
+[saddlepoint tuning](research-trials/saddlepoint-tuning-data.md),
+[DP pruning limits](research-trials/dp-pruning-limits.md)), and
 [measurement traps](research-trials/measurement-traps.md) — read that last one before designing a new
 benchmark here.
 

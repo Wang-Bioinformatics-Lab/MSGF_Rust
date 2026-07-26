@@ -8,9 +8,14 @@ prototype, document fidelity tradeoffs, and include validation and reproduction 
 
 ### Synthesis
 
+- [Consolidating the measured speedups](consolidated-speedups.md) — **the current state.** What
+  branch `perf/consolidated-speedups` merged, what each part was worth *in combination*, the three
+  new optimizations, the defects adversarial review caught, and the fidelity evidence.
+  314 → 572 spectra/s on the path `msgf search` drives (1.82×; 7.7× Java), byte-identical output.
 - [Generating-function and scoring-pipeline optimization](generating-function-optimization.md) —
   DP profiling, exact sink and threshold pruning, aggressive-pruning limits, saddlepoint
   approximation, node-table optimization, rejected approaches, and remaining opportunities.
+  Predates the consolidation; its per-experiment baselines differ from each other.
 
 ### Per-trial data
 
