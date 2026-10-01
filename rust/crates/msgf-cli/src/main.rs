@@ -19,6 +19,10 @@ mod search;
 
 use std::process::ExitCode;
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const USAGE: &str = "\
 msgf — MSGF_Rust command line
 

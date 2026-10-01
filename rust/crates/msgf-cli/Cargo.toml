@@ -19,6 +19,10 @@ msgf-scorer = { path = "../msgf-scorer" }
 msgf-genfunc = { path = "../msgf-genfunc" }
 msgf-search = { path = "../msgf-search" }
 rayon = { workspace = true }
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[features]
+mimalloc = ["dep:mimalloc"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
