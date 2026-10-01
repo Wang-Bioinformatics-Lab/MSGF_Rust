@@ -506,12 +506,35 @@ impl<'m> PreparedSpectrum<'m> {
                     continue;
                 }
                 let ll = &part.rank_ll[t];
+                let x_of = |k: i32| nominal_to_real(k) / ion.charge as f32 + ion.offset;
+                let seg_of = |x: f32| (((x / self.parent_mass) * segs as f32) as i32).min(segs - 1);
+                // With a positive ion charge seg_of(x_of(k)) never decreases with k (every step
+                // is monotone: the f32 conversion, division by a positive, adding a constant,
+                // truncation, min), so the nodes of segment s form one run: binary-search its
+                // first node and stop after its last. Otherwise test every node.
+                let monotone = ion.charge > 0;
+                let (mut first, mut last) = (1, top);
+                if monotone {
+                    // First k with seg >= s, then first k with seg > s; the run is between.
+                    let search = |pred: &dyn Fn(i32) -> bool| {
+                        let (mut lo, mut hi) = (1, top + 1);
+                        while lo < hi {
+                            let mid = lo + (hi - lo) / 2;
+                            if pred(seg_of(x_of(mid))) {
+                                lo = mid + 1;
+                            } else {
+                                hi = mid;
+                            }
+                        }
+                        lo
+                    };
+                    first = search(&|g| g < s as i32);
+                    last = search(&|g| g <= s as i32) - 1;
+                }
                 let mut cursor = 0usize;
-                for k in 1..=top {
-                    let real = nominal_to_real(k);
-                    let x = real / ion.charge as f32 + ion.offset;
-                    let seg = (((x / self.parent_mass) * segs as f32) as i32).min(segs - 1);
-                    if seg != s as i32 {
+                for k in first..=last {
+                    let x = x_of(k);
+                    if !monotone && seg_of(x) != s as i32 {
                         continue;
                     }
                     let bin = match self.lookup_walk(x, &mut cursor) {

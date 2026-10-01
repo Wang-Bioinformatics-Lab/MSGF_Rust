@@ -212,7 +212,9 @@ struct Scratch {
     hi: Vec<i32>,
     rem: Vec<i32>,
     /// Per vertex: (arena start, stored length, lowest stored score).
-    rows: Vec<(usize, usize, i32)>,
+    rows: Vec<(usize, u32, i32)>,
+    /// Contributing edges of the row being convolved: (source offset, target range, weight).
+    desc: Vec<(isize, isize, isize, f64)>,
     /// Holds the sink's edge-table column while it is patched to 0.
     saved: Vec<i32>,
     arena: Vec<f64>,
@@ -405,6 +407,43 @@ fn axpy(dst: &mut [f64], src: &[f64], w: f64) {
     }
 }
 
+/// Cells per register block of the convolution; also the zero pad kept around every arena row.
+const PAD: usize = 16;
+
+/// One row of the convolution, register-blocked: for each block of PAD target cells the edges are
+/// accumulated in alphabet order into a local block (`acc += w * src`, starting from +0.0) and
+/// stored once. Per cell this is the same sequence of IEEE operations as zeroing the row and
+/// running each edge's `axpy` in turn; lanes outside an edge's source range read pad zeros and
+/// add +0.0 (see the caller's `blocked` condition).
+#[inline(always)]
+fn convolve_blocked(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
+    let ml = dst.len() as isize;
+    let mut c = 0isize;
+    while c < ml {
+        let mut acc = [0f64; PAD];
+        for &(d, ilo, ihi, w) in desc {
+            if c + PAD as isize <= ilo || c >= ihi {
+                continue;
+            }
+            let s0 = (d + c) as usize;
+            let src: &[f64; PAD] = head[s0..s0 + PAD].try_into().unwrap();
+            for t in 0..PAD {
+                acc[t] += w * src[t];
+            }
+        }
+        let c0 = c as usize;
+        if c + PAD as isize <= ml {
+            let out: &mut [f64; PAD] = (&mut dst[c0..c0 + PAD]).try_into().unwrap();
+            *out = acc;
+        } else {
+            for (o, &x) in dst[c0..].iter_mut().zip(&acc) {
+                *o = x;
+            }
+        }
+        c += PAD as isize;
+    }
+}
+
 /// Unmixed distribution D_p of one sink. `cut`: drop cells whose best completion is below it.
 ///
 /// Reachability, the structural support `[lo, hi]` and the best completion `rem` are integer
@@ -457,6 +496,7 @@ fn sink_dp_inner(
         hi,
         rem,
         rows,
+        desc,
         arena,
         ..
     } = s;
@@ -558,11 +598,12 @@ fn sink_dp_inner(
     }
     let best = hi[pu];
     let cut = cut.map(|c| c.min(best));
-    // Stored range per vertex: (arena start, length, lowest score).
+    // Stored range per vertex: (arena start, length, lowest score). Rows are laid out in vertex
+    // order with PAD zero cells before the first row and after every row.
     rows.clear();
-    let mut total = 0usize;
+    let mut total = PAD;
     for m in 0..=pu {
-        let mut row = (total, 0usize, 0i32);
+        let mut row = (total, 0u32, 0i32);
         if reach[m] != 0 && rem[m] != i32::MIN {
             let l = match cut {
                 Some(c) => lo[m].max(c - rem[m]),
@@ -570,52 +611,71 @@ fn sink_dp_inner(
             };
             row.2 = l;
             if hi[m] >= l {
-                row.1 = (hi[m] - l + 1) as usize;
-                total += row.1;
+                let len = (hi[m] - l + 1) as usize;
+                row.1 = len as u32;
+                total += len + PAD;
             }
         }
         rows.push(row);
     }
-    // The arena only grows; every row is zeroed right before it is accumulated into.
+    // The arena only grows; the leading pad is zeroed here and each row's trailing pad when the
+    // row is written, so every pad cell reads as +0.0.
     if arena.len() < total {
         arena.resize(total, 0.0);
     }
-    arena[0] = 1.0; // D_0 = {0: 1}; low[0] = 0 always (the cut never exceeds the best path).
+    arena[..PAD].fill(0.0);
+    // D_0 = {0: 1}; low[0] = 0 always (the cut never exceeds the best path).
+    let (s0, l0, _) = rows[0];
+    debug_assert_eq!((s0, l0), (PAD, 1));
+    arena[s0] = 1.0;
+    arena[s0 + 1..s0 + 1 + PAD].fill(0.0);
+    // Register blocking needs every weight finite and >= 0: then a pad cell contributes
+    // w * (+0.0) = +0.0, and adding +0.0 to a sum of non-negative terms changes no bit, so
+    // reading past a source row's ends is the same as skipping the missing cells.
+    let blocked = edges.iter().all(|ed| ed.prob.is_finite() && ed.prob >= 0.0);
     for m in 1..=pu {
         let (ms, ml, lm) = rows[m];
+        let ml = ml as usize;
         if ml == 0 {
             continue;
         }
         let (head, tail) = arena.split_at_mut(ms);
-        let dst = &mut tail[..ml];
-        dst.fill(0.0);
+        let (dst, after) = tail.split_at_mut(ml);
+        after[..PAD].fill(0.0);
+        // Contributing edges in alphabet order: dst index i reads arena[d + i] for i in
+        // [ilo, ihi) (the source row's cells), weight w.
+        desc.clear();
         for (a, ed) in edges.iter().enumerate() {
             if m < ed.nom {
                 continue;
             }
             let (ps, pl, lp) = rows[m - ed.nom];
+            let pl = pl as usize;
             if pl == 0 {
                 continue;
             }
             let sh = v[m] + e[a * stride + m];
-            // Source cell i (score lp + i) lands at target index lp + i + sh - lm.
-            let base = lp + sh - lm;
-            let src = &head[ps..ps + pl];
-            if base < 0 {
-                let skip = (-base) as usize;
-                if skip < pl {
-                    axpy(dst, &src[skip..], ed.prob);
-                }
-            } else {
-                let off = base as usize;
-                if off < ml {
-                    axpy(&mut dst[off..], src, ed.prob);
-                }
+            // Source cell j (score lp + j) lands at target index lp + j + sh - lm.
+            let base = (lp + sh - lm) as isize;
+            let (ilo, ihi) = (base.max(0), (base + pl as isize).min(ml as isize));
+            if ilo >= ihi {
+                continue;
+            }
+            desc.push((ps as isize - base, ilo, ihi, ed.prob));
+        }
+        if blocked {
+            convolve_blocked(head, dst, desc);
+        } else {
+            dst.fill(0.0);
+            for &(d, ilo, ihi, w) in desc.iter() {
+                let (ilo, ihi) = (ilo as usize, ihi as usize);
+                let s = (d + ilo as isize) as usize;
+                axpy(&mut dst[ilo..ihi], &head[s..s + (ihi - ilo)], w);
             }
         }
     }
     let (ps, pl, low_p) = rows[pu];
-    let cells = arena[ps..ps + pl].to_vec();
+    let cells = arena[ps..ps + pl as usize].to_vec();
     Some(SinkDist {
         low: low_p,
         cells,
