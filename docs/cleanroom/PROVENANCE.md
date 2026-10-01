@@ -150,6 +150,33 @@ same inputs:
 The results are in the integration report and in `rust/crates/msgf-cli/tests/cleanroom_vectors.rs`,
 which repeats the test-vector comparison whenever `MSGF_CLEANROOM_VECTORS` is set.
 
+## Step 4: speed work (2026-10-01)
+
+A Claude agent (Opus) working for the user made the clean-room scorer faster on branch
+`cleanroom-speed`, from `cleanroom-scorer` `9a7068e`. It changed only clean-room code
+(`msgf-genfunc/src/lib.rs`, `msgf-scorer/src/{spectrum,candidate,lib}.rs`).
+
+What it read and did not read:
+
+- It did **not** read MS-GF+ source (none was on the machine, none was fetched), the five removed
+  files, any pre-`9a7068e` version of `msgf-scorer/src/{preprocess,scored_spectrum,lib}.rs` or
+  `msgf-genfunc/src/{lib,graph}.rs`, or the dropped `tilt.rs`, in git history or anywhere else.
+- It read the clean-room code, `docs/cleanroom/SPEC.md`, `LICENSING.md` and the integration
+  report, and took *ideas only* from this repository's prose `PERFORMANCE.md` and
+  `ALGORITHMIDEAS.md` (marked historical): sharing one edge build across isotope sinks, a
+  runtime-selected AVX kernel without FMA, an ion-major node-table sweep, reusable buffers.
+  Everything was implemented fresh against the clean-room code; the register-blocked
+  convolution with zero-padded rows, the blocked integer passes and the segment-run node
+  tables are new.
+- For timing on the cluster, the `0fb0738` tree was built from `git archive` with compiler
+  output discarded, as in step 3; only the resulting binary was run.
+
+**Validation.** After every change: the integration harness (58 comparisons against the
+`0fb0738` binary, plus two rescores with retrained models of other shapes) was byte-identical,
+and `cargo test --workspace` with `MSGF_CLEANROOM_VECTORS` set passed. The rescore vectors and
+`search` were also checked on a CPU without AVX2, which runs the baseline (non-dispatched) path.
+Timings are in `PERFORMANCE.md` ("Current numbers").
+
 ## What remains of MS-GF+
 
 **No MS-GF+ code remains in this repository.** What remains:

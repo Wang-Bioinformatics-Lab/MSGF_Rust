@@ -20,7 +20,9 @@
 //! black-box behaviour, by an implementer who never saw MS-GF+ source or this repository's prior
 //! code. It was written in DIA_Proteomics_Rust (`rust/src/dda/specprob/`, commit `b4485bb`, merged
 //! as `b930875`; MIT OR Apache-2.0, same author) and brought here unchanged apart from module
-//! layout and the [`preprocess`] entry point for the trainer. See `docs/cleanroom/PROVENANCE.md`.
+//! layout and the [`preprocess`] entry point for the trainer; the node tables, rounding helpers
+//! and RawScore buffers were later made faster without changing a bit of output (2026-10-01).
+//! See `docs/cleanroom/PROVENANCE.md`.
 //! The `.param` reader in `param.rs` was written from `docs/param-format.md`.
 //!
 //! ```no_run

@@ -16,7 +16,9 @@
 //! prior generating-function code. Originally `rust/src/dda/specprob/null.rs` in
 //! DIA_Proteomics_Rust (commit `b4485bb`, merged as `b930875`; MIT OR Apache-2.0, same author),
 //! brought here unchanged apart from module paths and moving `Cleavage` to `msgf-scorer` (both
-//! crates use it; re-exported here). See `docs/cleanroom/PROVENANCE.md`.
+//! crates use it; re-exported here), then made faster on 2026-10-01 from the same spec and this
+//! code alone (shared edge table, blocked integer passes, register-blocked convolution, AVX2
+//! dispatch; output bit-identical). See `docs/cleanroom/PROVENANCE.md`.
 
 pub use msgf_scorer::Cleavage;
 use msgf_scorer::PreparedSpectrum;

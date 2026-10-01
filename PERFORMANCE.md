@@ -1,5 +1,64 @@
 # Performance — MSGF_Rust vs. MS-GF+ (Java)
 
+## Current numbers (2026-10-01, branch `cleanroom-speed`)
+
+The clean-room scorer was re-optimised from `docs/cleanroom/SPEC.md` and its own code (see
+`docs/cleanroom/PROVENANCE.md` step 4). Output is **byte-identical** to the `0fb0738` release
+binary on all 58 CLI comparisons of the integration harness plus two retrained-model rescores,
+on both the AVX2 path and the baseline (non-AVX) path.
+
+Workloads: HeLa subset (17,724 PSMs, 2,960 (scan, charge) groups) rescored with the bundled
+model, and `search -n 5` of the same spectra against UniProt UP000005640 (`--tda`, fixed C+57,
+variable M+16, 10 ppm, `--ti 0,1`). Each figure is the minimum wall time of five interleaved
+runs, all three binaries on the same machine; binaries built from the exact commits with
+`cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28`, no `target-cpu` flag.
+
+| workload | `0fb0738` | clean-room `9a7068e` | `cleanroom-speed` | speed / `0fb0738` |
+|---|--:|--:|--:|--:|
+| **AMD EPYC 7713 (HPCC, pinned cores, shared node)** | | | | |
+| `rescore`, ti 0,1 | 2.55 s | 3.52 s | **1.80 s** | 0.71 |
+| `rescore`, ti 0,0 | 1.62 s | 2.19 s | **1.13 s** | 0.70 |
+| `rescore`, ti −1,2 | 4.23 s | 6.27 s | **3.26 s** | 0.77 |
+| `rescore`, composition + oxM | 2.58 s | 3.64 s | **1.86 s** | 0.72 |
+| `search`, 1 thread | 8.53 s | 6.94 s | **5.14 s** | 0.60 |
+| `search`, 16 threads | 1.36 s | 1.29 s | **1.04 s** | 0.76 |
+| **AMD Ryzen 9 9900X (MRB LXC, one pinned core / 16 cores for `search` 16 t)** | | | | |
+| `rescore`, ti 0,1 | 1.33 s | 1.74 s | **0.87 s** | 0.65 |
+| `rescore`, ti 0,0 | 0.83 s | 1.06 s | **0.54 s** | 0.65 |
+| `rescore`, ti −1,2 | 2.32 s | 3.09 s | **1.51 s** | 0.65 |
+| `rescore`, composition + oxM | 1.38 s | 1.81 s | **0.90 s** | 0.65 |
+| `search`, 1 thread | 3.99 s | 3.25 s | **2.34 s** | 0.59 |
+| `search`, 16 threads | 0.53 s | 0.48 s | **0.40 s** | 0.75 |
+
+On a CPU without AVX2 (the KVM "Common KVM processor" of the MRB worker; baseline SSE2 path) the
+new build is 0.77–0.80× of `0fb0738` on the four rescore sets and 0.63× on `search` 1 thread
+(single runs on an idle machine).
+
+What changed, all exact (the per-cell f64 operation sequence of the DP is unchanged):
+
+1. **One edge-score table per (spectrum, charge)**, shared by every isotope sink. The edge score
+   depends on the vertex and the label, never on the sink; the sink's own column is patched to 0
+   while that sink runs.
+2. **Vectorisable integer passes.** Reachability, structural support and best completion are
+   min/max recurrences, evaluated in blocks of `min nom` vertices over contiguous slices.
+3. **Register-blocked convolution.** Each target row is computed 16 cells at a time with every
+   contributing edge accumulated in alphabet order in registers, then stored once. Rows carry a
+   16-cell zero pad so blocks may read past a source row's ends; with every weight finite and
+   ≥ 0 a pad lane adds `+0.0`, which changes no bit. Other alphabets fall back to per-edge passes.
+4. **Runtime AVX2 dispatch** of the whole generating function (`#[target_feature(enable =
+   "avx2")]`, no FMA; Rust never contracts `a * b + c`), with the baseline build as fallback.
+5. **Reusable thread-local DP buffers**; the arena only grows.
+6. **Node tables swept ion by ion** with a walking peak-lookup cursor, restricted to the run of
+   nodes that fall in each segment (two binary searches; the segment index is monotone in k).
+7. **libm-free `floor`/`round`** in the score and nominal-mass rounding, cached residue masses and
+   stack prefix sums in RawScore.
+
+Profile after (EPYC, `rescore` ti 0,1): generating function 82 %, node tables 6 %, preparation
+2 %, MGF parsing and sorting ~3 % (before: generating function 77 %, node tables 16 %, libm
+`floorf` 1.6 %). Measured and rejected: 8- and 32-cell blocks (both ~25 % slower than 16).
+`msgf rescore` is still single-threaded.
+
+
 > **Historical (2026-09-30).** Everything below measures the scorer and generating function *before*
 > the clean-room replacement (`LICENSING.md` §3, `docs/cleanroom/`). That implementation, including
 > its CSR graph, arena, AVX kernel and tilt pruning, no longer exists. The clean-room code produces
@@ -17,8 +76,9 @@
 > | `search` -n 5, 16 threads | 2.4 s | 2.6 s |
 > | `search` -n 5, 1 thread | 15.7 s | 12.7 s |
 >
-> The rescore cost of the wider-alphabet and wider-isotope sets is the lost DP optimizations. If
-> they are worth re-deriving, do it from `docs/cleanroom/SPEC.md` §8, never from the old code.
+> The rescore cost of the wider-alphabet and wider-isotope sets was the lost DP optimizations.
+> They were re-derived from `docs/cleanroom/SPEC.md` §8 and the clean-room code on 2026-10-01;
+> see "Current numbers" above.
 
 Measured speed of the **MS-GF+ significance scoring** (the generating-function spectral E-value —
 the "MSGF scoring" this project reimplements) in Rust versus the reference Java implementation, on
