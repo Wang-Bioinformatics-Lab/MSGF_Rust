@@ -109,7 +109,20 @@ const FORMULAS: [(u8, [u32; 5]); 20] = [
 pub const RESIDUE_ORDER: &[u8; 20] = b"GASPVTCLINDQKEMHFRYW";
 
 /// Monoisotopic residue mass (binary64 elemental sum), or `None` for a non-standard letter.
+#[inline]
 pub fn residue_mass(letter: u8) -> Option<f64> {
+    static TABLE: std::sync::OnceLock<[Option<f64>; 256]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut t = [None; 256];
+        for l in 0..=255u8 {
+            t[l as usize] = residue_mass_from_formula(l);
+        }
+        t
+    })[letter as usize]
+}
+
+/// The elemental sum behind [`residue_mass`] (which caches it per letter).
+fn residue_mass_from_formula(letter: u8) -> Option<f64> {
     FORMULAS.iter().find(|(l, _)| *l == letter).map(|(_, f)| {
         f[0] as f64 * M_C
             + f[1] as f64 * M_H
@@ -124,13 +137,50 @@ pub fn residue_mass(letter: u8) -> Option<f64> {
 /// Score rounding: `floor(x + 0.5)` with the addition in f32 (halves go up).
 #[inline]
 pub(crate) fn round_score(x: f32) -> i32 {
-    (x + 0.5f32).floor() as i32
+    floor_to_i32(x + 0.5f32)
 }
 
 /// Nominal rounding: nearest, halves away from zero, on an f32 value.
 #[inline]
 pub(crate) fn round_nominal(x: f32) -> i32 {
-    x.round() as i32
+    round_to_i32(x)
+}
+
+/// `y.floor() as i32` without a libm call (baseline x86-64 has no rounding instruction). Below
+/// 2^23 in magnitude `y as i32` truncates exactly and one step down corrects negative
+/// non-integers; at or above it every f32 is already an integer (or infinite), and NaN takes the
+/// same saturating cast to 0.
+#[inline(always)]
+fn floor_to_i32(y: f32) -> i32 {
+    if y.abs() < 8_388_608.0 {
+        let t = y as i32;
+        if (t as f32) > y {
+            t - 1
+        } else {
+            t
+        }
+    } else {
+        y as i32
+    }
+}
+
+/// `x.round() as i32` (halves away from zero) without a libm call. Below 2^23 in magnitude the
+/// fractional part `x - trunc(x)` is exact in f32.
+#[inline(always)]
+fn round_to_i32(x: f32) -> i32 {
+    if x.abs() < 8_388_608.0 {
+        let t = x as i32;
+        let f = x - t as f32;
+        if f >= 0.5 {
+            t + 1
+        } else if f <= -0.5 {
+            t - 1
+        } else {
+            t
+        }
+    } else {
+        x as i32
+    }
 }
 
 /// Real mass -> nominal integer.
@@ -157,6 +207,70 @@ mod tests {
         assert_eq!(round_score(f32::NEG_INFINITY), i32::MIN);
         assert_eq!(round_nominal(-2.5), -3);
         assert_eq!(round_nominal(2.5), 3);
+    }
+
+    /// The libm-free floor and round agree with `f32::floor` / `f32::round` on every f32 class:
+    /// a strided sweep over all bit patterns plus the boundary values.
+    #[test]
+    fn software_rounding_matches_std() {
+        let mut check = |x: f32| {
+            assert_eq!(
+                floor_to_i32(x),
+                x.floor() as i32,
+                "floor {x:e} ({:#x})",
+                x.to_bits()
+            );
+            assert_eq!(
+                round_to_i32(x),
+                x.round() as i32,
+                "round {x:e} ({:#x})",
+                x.to_bits()
+            );
+            assert_eq!(round_score(x), (x + 0.5f32).floor() as i32, "score {x:e}");
+        };
+        let mut b = 0u32;
+        loop {
+            check(f32::from_bits(b));
+            match b.checked_add(9_973) {
+                Some(n) => b = n,
+                None => break,
+            }
+        }
+        for k in -70_000i32..=70_000 {
+            let x = k as f32 * 0.25;
+            for y in [
+                x,
+                f32::from_bits(x.to_bits() + 1),
+                f32::from_bits(x.to_bits().wrapping_sub(1)),
+            ] {
+                check(y);
+            }
+        }
+        for x in [
+            0.0f32,
+            -0.0,
+            0.5,
+            -0.5,
+            0.49999997,
+            -0.49999997,
+            8_388_607.5,
+            -8_388_607.5,
+            8_388_608.0,
+            -8_388_608.0,
+            2_147_483_520.0,
+            2_147_483_648.0,
+            -2_147_483_648.0,
+            -2_147_483_904.0,
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+        ] {
+            check(x);
+        }
     }
 
     #[test]

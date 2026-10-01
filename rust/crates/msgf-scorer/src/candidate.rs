@@ -42,15 +42,43 @@ pub fn match_and_terminal_parts(
         return None;
     }
     let l = res.len();
+    // Prefix sums live on the stack for ordinary lengths; longer candidates use the heap.
+    const STACK: usize = 128;
+    if l < STACK {
+        let mut cum_nom = [0i32; STACK];
+        let mut cum_real = [0f64; STACK];
+        parts_with(
+            prep,
+            cand,
+            cleavage,
+            &mut cum_nom[..=l],
+            &mut cum_real[..=l],
+        )
+    } else {
+        let mut cum_nom = vec![0i32; l + 1];
+        let mut cum_real = vec![0f64; l + 1];
+        parts_with(prep, cand, cleavage, &mut cum_nom, &mut cum_real)
+    }
+}
+
+/// [`match_and_terminal_parts`] with caller-provided prefix-sum buffers of length `L + 1`.
+#[inline(always)]
+fn parts_with(
+    prep: &PreparedSpectrum,
+    cand: &Candidate,
+    cleavage: &Cleavage,
+    cum_nom: &mut [i32],
+    cum_real: &mut [f64],
+) -> Option<(i32, i32)> {
+    let res = cand.residues;
+    let l = res.len();
     // Real masses, nominal prefix sums N_j and binary64 cumulative real sums A_j.
-    let mut cum_nom = Vec::with_capacity(l + 1);
-    let mut cum_real = Vec::with_capacity(l + 1);
-    cum_nom.push(0i32);
-    cum_real.push(0f64);
-    for r in res {
+    cum_nom[0] = 0;
+    cum_real[0] = 0.0;
+    for (j, r) in res.iter().enumerate() {
         let m = residue_mass(r.letter)? + r.delta;
-        cum_nom.push(cum_nom.last().unwrap() + nominal(m));
-        cum_real.push(cum_real.last().unwrap() + m);
+        cum_nom[j + 1] = cum_nom[j] + nominal(m);
+        cum_real[j + 1] = cum_real[j] + m;
     }
     let p = cum_nom[l];
 
