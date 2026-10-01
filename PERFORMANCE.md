@@ -56,7 +56,10 @@ What changed, all exact (the per-cell f64 operation sequence of the DP is unchan
 Profile after (EPYC, `rescore` ti 0,1): generating function 82 %, node tables 6 %, preparation
 2 %, MGF parsing and sorting ~3 % (before: generating function 77 %, node tables 16 %, libm
 `floorf` 1.6 %). Measured and rejected: 8- and 32-cell blocks (both ~25 % slower than 16).
-`msgf rescore` is still single-threaded.
+`msgf rescore` takes `--threads <N>` (default: all cores; branch `speed-scout`), parallel over
+`(scan, charge)` groups with byte-identical output for every thread count. Ryzen 9900X, HeLa
+subset ti 0,1: 0.83 s at 1 thread, 0.24 s at 4, 0.11 s at 12, 0.10 s at 22 (default); full HeLa
+R01 run (542,461 PSMs from `search -n 5`, composition + oxM): 60.2 s → 6.3 s at the default 22.
 
 
 > **Historical (2026-09-30).** Everything below measures the scorer and generating function *before*

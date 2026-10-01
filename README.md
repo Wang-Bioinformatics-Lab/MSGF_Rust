@@ -140,7 +140,8 @@ output — so you can get MS-GF+-compatible q-values without running a search.
 `rescore` takes a spectra file and a list of peptide-spectrum matches, and recomputes RawScore,
 DeNovoScore and SpecEValue for each. The generating function depends only on the spectrum (not on
 any one peptide), so it is built **once per `(scan, charge)`** and cached; every PSM against that
-spectrum is then a cheap RawScore + tail lookup.
+spectrum is then a cheap RawScore + tail lookup. Groups are independent, so they run in parallel
+(`--threads`, default all cores); rows are still written in input order.
 
 ```bash
 msgf rescore \
@@ -159,6 +160,7 @@ msgf rescore \
 | `--aa-probs <FILE>`    | optional | Amino-acid background probabilities (TSV). Default: uniform `0.05`. |
 | `--ox-m`               | optional | Add variable oxidation on M (`+15.994915`) to the graph alphabet. |
 | `--db-size <N>`        | optional | Also emit `evalue = SpecEValue × N` (candidate count). |
+| `--threads <N>`        | optional | Worker threads (default: all cores). The `(scan, charge)` groups are scored in parallel; output and stderr are identical for every thread count. |
 
 PSMs whose scan is missing from the spectra file, that have no charge, or whose peptide can't be
 parsed are **skipped** with a note on stderr; a summary line (`rescored N; skipped M`) is printed at

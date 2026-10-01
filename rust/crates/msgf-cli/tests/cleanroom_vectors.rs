@@ -155,3 +155,46 @@ fn search_set_is_byte_identical() {
     );
     eprintln!("ok: search_n5 byte-identical ({} bytes)", got.len());
 }
+
+/// `msgf rescore` output (stdout and stderr) must not depend on `--threads`.
+#[test]
+fn rescore_is_identical_for_every_thread_count() {
+    let Some(v) = vectors() else {
+        eprintln!("skip: MSGF_CLEANROOM_VECTORS not set");
+        return;
+    };
+    let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    for (psm_set, mgf) in [("hela", "hela_r01_sub.mgf"), ("synthetic", "synthetic.mgf")] {
+        let spectra = v.join("spectra").join(mgf);
+        let psms = v.join(format!("inputs/psms_{psm_set}.tsv"));
+        let mut first: Option<(Vec<u8>, Vec<u8>)> = None;
+        for threads in ["1", "2", "5", "default"] {
+            let out = tmp.join(format!("threads_{psm_set}_{threads}.tsv"));
+            let mut args = vec![
+                "rescore",
+                "-s",
+                path(&spectra),
+                "-i",
+                path(&psms),
+                "--ti",
+                "-1,2",
+                "-o",
+                path(&out),
+            ];
+            if threads != "default" {
+                args.extend(["--threads", threads]);
+            }
+            let run = msgf(&args);
+            assert!(
+                run.status.success(),
+                "{psm_set} --threads {threads}: rescore failed"
+            );
+            let got = (std::fs::read(&out).unwrap(), run.stderr);
+            match &first {
+                None => first = Some(got),
+                Some(f) => assert!(*f == got, "{psm_set}: --threads {threads} differs from 1"),
+            }
+        }
+        eprintln!("ok: {psm_set} identical at 1, 2, 5 and default threads");
+    }
+}

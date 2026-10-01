@@ -49,6 +49,8 @@ OPTIONS:
                            composition to reproduce a real search's SpecEValue.
         --ox-m             Add variable oxidation on M (+15.994915) to the graph alphabet
         --db-size <N>      If set, also emit EValue = SpecEValue * N (candidate count)
+        --threads <N>      Worker threads (default: all cores). Output is identical for
+                           every thread count.
     -h, --help             Print this help
 
 PEPTIDE FORMAT (in the --psms file):
@@ -78,6 +80,7 @@ pub struct Config {
     aa_probs: Option<PathBuf>,
     ox_m: bool,
     db_size: Option<f64>,
+    threads: Option<usize>,
 }
 
 impl Config {
@@ -86,6 +89,7 @@ impl Config {
             (None, None, None, None, None);
         let mut ti = (0, 1);
         let (mut ox_m, mut db_size) = (false, None);
+        let mut threads = None;
         let mut it = args.iter();
         while let Some(a) = it.next() {
             let mut want = |name: &str| -> Result<String, String> {
@@ -105,6 +109,13 @@ impl Config {
                         want("--db-size")?
                             .parse()
                             .map_err(|_| "--db-size must be a number")?,
+                    )
+                }
+                "--threads" => {
+                    threads = Some(
+                        want("--threads")?
+                            .parse()
+                            .map_err(|_| "--threads must be a positive integer")?,
                     )
                 }
                 "--ti" => {
@@ -138,6 +149,7 @@ impl Config {
             aa_probs,
             ox_m,
             db_size,
+            threads,
         })
     }
 }
@@ -181,6 +193,13 @@ enum Outcome {
 }
 
 pub fn run(cfg: &Config) -> Result<(), String> {
+    if let Some(n) = cfg.threads {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build_global()
+            .map_err(|e| format!("configuring {n} threads: {e}"))?;
+    }
+
     let (model, model_source) = crate::model::load(cfg.param.as_deref())?;
     crate::model::announce(&model_source, &model);
     let spectra = index_spectra(&cfg.spectra)?;
@@ -255,8 +274,11 @@ pub fn run(cfg: &Config) -> Result<(), String> {
 /// 2. builds the group's single generating function pruned to the **minimum** of those RawScores —
 ///    the lowest score any of them will ever query — and reads each PSM's tail off it.
 ///
+/// Groups are scored in parallel on the current rayon pool (`--threads`); each outcome is stored at
+/// its PSM's index, so the result is identical for every thread count.
+///
 /// Grouping (rather than two passes over the whole list) is what keeps the memory profile honest:
-/// exactly one prepared spectrum and one distribution are live at a time, where the previous
+/// one prepared spectrum and one distribution are live per worker thread, where the previous
 /// PSM-ordered driver kept one of each for **every** distinct `(scan, charge)` alive in a cache
 /// until the run ended. What it costs is one `Vec<usize>` of PSM indices per group plus a 24-byte
 /// [`Outcome`] per PSM, held so rows can be emitted in input order.
@@ -302,37 +324,79 @@ fn score_all(
         }
     }
 
-    let mut raws: Vec<i32> = Vec::new();
-    for &((scan, charge), ref idxs) in &keyed {
-        let raw_spectrum = &spectra[scan];
-        let Some(prep) = prepare_spec(model, raw_spectrum, charge, null.isotope) else {
-            continue; // outcomes already carry Skip::NoGenFunc
-        };
-
-        // Pass 1: RawScores. `i32::MIN` marks an unparseable peptide — no real RawScore can reach
-        // it, so it neither lowers the threshold nor becomes a row.
-        raws.clear();
-        let mut threshold = i32::MAX;
-        for &i in idxs {
-            match raw_score_of(&prep, &null.cleavage, &psms[i].peptide) {
-                Some(r) => {
-                    threshold = threshold.min(r);
-                    raws.push(r);
-                }
-                None => raws.push(i32::MIN),
-            }
+    // Groups are independent (each builds its own prepared spectrum and distribution, and the
+    // generating function's scratch is thread-local), so they run in parallel on the current rayon
+    // pool; results are scattered back by PSM index, so the output does not depend on the pool.
+    use rayon::prelude::*;
+    let scored: Vec<Vec<(usize, Outcome)>> = keyed
+        .par_iter()
+        .with_min_len(4)
+        .map_init(
+            Vec::new,
+            |raws: &mut Vec<i32>, &((scan, charge), ref idxs)| {
+                score_group(
+                    model,
+                    &spectra[scan],
+                    charge,
+                    idxs,
+                    psms,
+                    null,
+                    pruned,
+                    raws,
+                )
+            },
+        )
+        .collect();
+    for group in scored {
+        for (i, o) in group {
+            outcomes[i] = o;
         }
+    }
+    outcomes
+}
 
-        // Pass 2: the group's generating function, pruned to the lowest score it will be asked for.
-        // A group with no scorable PSM leaves `threshold` at `i32::MAX`; the DP clamps the cut to
-        // the DeNovoScore, so that is simply the cheapest exact run, and it is still needed to
-        // decide whether these PSMs skip as "unparseable" or as "no generating function".
-        let Some(tail) = score_distribution(&prep, null, pruned.then_some(threshold)) else {
-            continue;
-        };
-        let denovo = tail.best_possible();
-        for (&i, &raw) in idxs.iter().zip(&raws) {
-            outcomes[i] = if raw == i32::MIN {
+/// One `(scan, charge)` group of [`score_all`]: the RawScore of every PSM, then the group's single
+/// generating function pruned to the lowest of them. Empty if the group has no distribution (its
+/// PSMs keep the provisional `Skip::NoGenFunc`).
+#[allow(clippy::too_many_arguments)]
+fn score_group(
+    model: &ScoreModel,
+    raw_spectrum: &RawSpectrum,
+    charge: i32,
+    idxs: &[usize],
+    psms: &[Psm],
+    null: &NullModel,
+    pruned: bool,
+    raws: &mut Vec<i32>,
+) -> Vec<(usize, Outcome)> {
+    let Some(prep) = prepare_spec(model, raw_spectrum, charge, null.isotope) else {
+        return Vec::new();
+    };
+    // Pass 1: RawScores. `i32::MIN` marks an unparseable peptide — no real RawScore can reach
+    // it, so it neither lowers the threshold nor becomes a row.
+    raws.clear();
+    let mut threshold = i32::MAX;
+    for &i in idxs {
+        match raw_score_of(&prep, &null.cleavage, &psms[i].peptide) {
+            Some(r) => {
+                threshold = threshold.min(r);
+                raws.push(r);
+            }
+            None => raws.push(i32::MIN),
+        }
+    }
+    // Pass 2: the group's generating function, pruned to the lowest score it will be asked for.
+    // A group with no scorable PSM leaves `threshold` at `i32::MAX`; the DP clamps the cut to
+    // the DeNovoScore, so that is simply the cheapest exact run, and it is still needed to
+    // decide whether these PSMs skip as "unparseable" or as "no generating function".
+    let Some(tail) = score_distribution(&prep, null, pruned.then_some(threshold)) else {
+        return Vec::new();
+    };
+    let denovo = tail.best_possible();
+    idxs.iter()
+        .zip(raws.iter())
+        .map(|(&i, &raw)| {
+            let o = if raw == i32::MIN {
                 Outcome::Skip(Skip::BadPeptide)
             } else {
                 Outcome::Row {
@@ -342,9 +406,9 @@ fn score_all(
                     spec: tail.tail_mass(raw),
                 }
             };
-        }
-    }
-    outcomes
+            (i, o)
+        })
+        .collect()
 }
 
 /// RawScore = the node + edge match score plus the enzymatic-terminus terms, so the SpecEValue tail
@@ -645,5 +709,113 @@ mod tests {
             pruned[psms.len() - 1],
             Outcome::Skip(Skip::NoSpectrum)
         ));
+    }
+
+    /// `score_all` on a multi-thread pool must equal the single-thread run bit for bit, PSM by
+    /// PSM (rows and skip reasons, in input order). Synthetic spectra and the bundled model, so it
+    /// needs no external data.
+    #[test]
+    fn thread_count_does_not_change_outcomes() {
+        let (model, _) = crate::model::load(None).expect("bundled model");
+        let null = build_null(None, true, (-1, 2)).expect("null model");
+        let peptides = [
+            "SAMPLERK",
+            "PEPTIDEK",
+            "LGEHNIDVLEGNEQFINAAK",
+            "VGAHAGEYGAEALER",
+            "MSFVTTR",
+            "AEFAEVSK",
+            "YLYEIAR",
+            "DGNASGTTLLEALDCILPPTRPTDKPLR",
+            "HM+15.995VLAGR",
+            "QNCELFEQLGEYK",
+        ];
+        let mut seed = 12345u64;
+        let mut rnd = move || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut spectra = HashMap::new();
+        let mut psms = Vec::new();
+        for (k, pep) in peptides.iter().enumerate() {
+            let plain: String = pep.chars().filter(|c| c.is_ascii_uppercase()).collect();
+            let neutral = msgf_chem::peptide_neutral_mass(&plain).unwrap();
+            let charge = 2 + (k % 2) as i32;
+            // b/y-like peaks of the peptide plus noise, so some RawScores are high.
+            let mut peaks: Vec<(f64, f64)> = Vec::new();
+            let mut acc = 0.0;
+            for c in plain.bytes() {
+                acc += msgf_chem::residue_mass(c).unwrap();
+                peaks.push((acc + msgf_chem::mass::PROTON, 1e5 * (0.5 + rnd())));
+                peaks.push((neutral - acc + msgf_chem::mass::PROTON, 1e5 * (0.5 + rnd())));
+            }
+            for _ in 0..80 {
+                peaks.push((100.0 + 1500.0 * rnd(), 1e4 * rnd()));
+            }
+            peaks.retain(|p| p.0 > 50.0 && p.0 < neutral);
+            peaks.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            let scan = format!("{}", 100 + k);
+            spectra.insert(
+                scan.clone(),
+                RawSpectrum {
+                    charge: Some(charge),
+                    precursor_mz: (neutral + charge as f64 * msgf_chem::mass::PROTON)
+                        / charge as f64,
+                    peaks,
+                },
+            );
+            // Each spectrum: its own peptide, two others, and an explicit second charge group.
+            for (j, q) in [k, (k + 3) % peptides.len(), (k + 7) % peptides.len()]
+                .iter()
+                .enumerate()
+            {
+                psms.push(Psm {
+                    scan: scan.clone(),
+                    peptide: peptides[*q].to_string(),
+                    charge: if j == 2 { Some(charge + 1) } else { None },
+                });
+            }
+        }
+        psms.push(Psm {
+            scan: "100".into(),
+            peptide: "PEPTIDEJ".into(),
+            charge: None,
+        });
+        psms.push(Psm {
+            scan: "no-such-scan".into(),
+            peptide: "PEPTIDEK".into(),
+            charge: Some(2),
+        });
+
+        let run = |n: usize| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .unwrap()
+                .install(|| score_all(&model, &spectra, &psms, &null, true))
+        };
+        let key = |o: &Outcome| match *o {
+            Outcome::Row {
+                charge,
+                raw,
+                denovo,
+                spec,
+            } => format!("{charge} {raw} {denovo} {:016x}", spec.to_bits()),
+            Outcome::Skip(s) => format!("{s:?}"),
+        };
+        let one: Vec<String> = run(1).iter().map(key).collect();
+        assert_eq!(one.len(), psms.len());
+        assert!(
+            one.iter()
+                .filter(|r| !r.starts_with(char::is_alphabetic))
+                .count()
+                >= 20
+        );
+        for n in [2, 3, 8] {
+            let many: Vec<String> = run(n).iter().map(key).collect();
+            assert_eq!(one, many, "{n} threads differ from 1 thread");
+        }
     }
 }
