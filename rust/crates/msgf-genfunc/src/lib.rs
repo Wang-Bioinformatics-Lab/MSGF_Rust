@@ -246,19 +246,31 @@ fn build(
         let mut s = s.borrow_mut();
         #[cfg(target_arch = "x86_64")]
         {
-            // MSGF_NO_AVX512 (diagnostic): take the AVX2 path on an AVX-512 machine, to compare paths.
-            if std::is_x86_feature_detected!("avx512f")
-                && std::env::var_os("MSGF_NO_AVX512").is_none()
-            {
+            // MSGF_GF_MAX_ISA (diagnostic: `avx2` or `sse2`) caps the path, so every path can be
+            // checked for bit-identity on one machine.
+            let cap = isa_cap();
+            if cap >= 2 && std::is_x86_feature_detected!("avx512f") {
                 // SAFETY: the CPU supports AVX-512F (checked above).
                 return unsafe { build_avx512(prep, null, min_query, detail, &mut s) };
             }
-            if std::is_x86_feature_detected!("avx2") {
+            if cap >= 1 && std::is_x86_feature_detected!("avx2") {
                 // SAFETY: the CPU supports AVX2 (checked above).
                 return unsafe { build_avx2(prep, null, min_query, detail, &mut s) };
             }
         }
         build_impl::<Portable>(prep, null, min_query, detail, &mut s)
+    })
+}
+
+/// The widest generating-function path allowed by `MSGF_GF_MAX_ISA` (2 = AVX-512, 1 = AVX2,
+/// 0 = baseline SSE2); unset or unrecognised = no cap. Read once.
+#[cfg(target_arch = "x86_64")]
+fn isa_cap() -> u8 {
+    static CAP: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
+    *CAP.get_or_init(|| match std::env::var("MSGF_GF_MAX_ISA").as_deref() {
+        Ok("avx2") => 1,
+        Ok("sse2") => 0,
+        _ => 2,
     })
 }
 
