@@ -129,6 +129,54 @@ pub struct SearchEngine<'a> {
 pub struct SearchScratch {
     peaks: Vec<(f64, f64)>,
     buf: ScoreBuffers,
+    /// The grouping map, kept so its table is reused across spectra (drained, never dropped).
+    grouped: HashMap<String, Hit, FxBuild>,
+    /// The peptide key being built (reused; cloned only when it is new).
+    key: String,
+    /// Formatted mod deltas by f64 bit pattern: `format!("{d:+.3}")` once per distinct value.
+    deltas: Vec<(u64, String)>,
+}
+
+/// A fast non-cryptographic hasher for the per-spectrum grouping map (keys are our own peptide
+/// strings, so there is no adversary). The map's iteration order is never observed: hits are
+/// sorted by (RawScore desc, key asc), a total order on distinct keys.
+#[derive(Clone, Copy, Default)]
+pub struct FxBuild;
+
+pub struct FxHasher(u64);
+
+impl std::hash::BuildHasher for FxBuild {
+    type Hasher = FxHasher;
+    #[inline]
+    fn build_hasher(&self) -> FxHasher {
+        FxHasher(0)
+    }
+}
+
+impl std::hash::Hasher for FxHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            let w = u64::from_le_bytes(c.try_into().unwrap());
+            self.0 = (self.0.rotate_left(5) ^ w).wrapping_mul(K);
+        }
+        let r = chunks.remainder();
+        if !r.is_empty() {
+            let mut b = [0u8; 8];
+            b[..r.len()].copy_from_slice(r);
+            self.0 = (self.0.rotate_left(5) ^ u64::from_le_bytes(b)).wrapping_mul(K);
+        }
+    }
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.0 = (self.0.rotate_left(5) ^ i as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
 }
 
 impl<'a> SearchEngine<'a> {
@@ -326,19 +374,25 @@ impl<'a> SearchEngine<'a> {
         // This runs *before* the generating function, which needs nothing from it but gains a great
         // deal: the RawScore of the worst PSM we will report is the tail threshold, and the DP can
         // then skip every score cell that provably cannot reach it.
-        let mut grouped: HashMap<String, Hit> = HashMap::new();
-        let buf = &mut scratch.buf;
+        let SearchScratch {
+            buf,
+            grouped,
+            key,
+            deltas,
+            ..
+        } = scratch;
+        grouped.clear();
         for k in ti_lo..=ti_hi {
             let target = parent_mass as f64 - k as f64 * ISOTOPE_STEP;
             let win = self.params.precursor_tol.window_da(target);
             for cand in self.index.window(target - win, target + win) {
-                let key = self.peptide_string(cand, false);
-                match grouped.get_mut(&key) {
+                self.peptide_key(cand, key, deltas);
+                match grouped.get_mut(key.as_str()) {
                     Some(hit) => hit.proteins.push(cand.protein),
                     None => {
                         let raw_score = self.raw_score(&prep, cand, buf);
                         grouped.insert(
-                            key,
+                            key.clone(),
                             Hit {
                                 raw_score,
                                 isotope_error: k,
@@ -353,7 +407,7 @@ impl<'a> SearchEngine<'a> {
         if grouped.is_empty() {
             return Vec::new(); // no candidates — the whole generating function is skipped
         }
-        let mut hits: Vec<(String, Hit)> = grouped.into_iter().collect();
+        let mut hits: Vec<(String, Hit)> = grouped.drain().collect();
         // Highest RawScore first; the SpecEValue tail is monotone in RawScore, so for a single
         // spectrum this is also best-SpecEValue order. The peptide key breaks ties deterministically.
         hits.sort_by(|a, b| b.1.raw_score.cmp(&a.1.raw_score).then(a.0.cmp(&b.0)));
@@ -371,7 +425,8 @@ impl<'a> SearchEngine<'a> {
         let _ = ti_hi;
 
         let db_size = self.db_size();
-        hits.into_iter()
+        let out: Vec<Psm> = hits
+            .into_iter()
             .map(|(peptide_key, hit)| {
                 // An exact-zero SpecEValue (RawScore above the support) is carried as -0.0, the
                 // established output of this tool (`-0.000000e0`).
@@ -413,7 +468,8 @@ impl<'a> SearchEngine<'a> {
                     pep_q_value: f32::NAN,
                 }
             })
-            .collect()
+            .collect();
+        out
     }
 
     /// RawScore for one candidate: the node + edge match score plus the terminal cleavage
@@ -441,6 +497,33 @@ impl<'a> SearchEngine<'a> {
         let at_prot_n = start == protein.start;
         let after_initiator_met = start == protein.start + 1 && self.db.seq[protein.start] == b'M';
         at_prot_n || after_initiator_met || self.cleave_at.contains(&self.db.seq[start - 1])
+    }
+
+    /// [`peptide_string`](Self::peptide_string) without context, written into `out` (cleared
+    /// first) with each distinct mod delta formatted once and cached in `deltas`. Same text.
+    fn peptide_key(&self, cand: &Candidate, out: &mut String, deltas: &mut Vec<(u64, String)>) {
+        let protein = &self.db.proteins[cand.protein as usize];
+        let (start, len) = (cand.start as usize, cand.len as usize);
+        let seq = &self.db.seq[start..start + len];
+        let at_prot_n = start == protein.start;
+        let at_prot_c = start + len == protein.start + protein.len;
+        out.clear();
+        for (i, &r) in seq.iter().enumerate() {
+            out.push(r as char);
+            let delta = self.mods.fixed_delta(r, i, len, at_prot_n, at_prot_c)
+                + cand.placement.delta_at(i, self.mods);
+            if delta != 0.0 {
+                let bits = delta.to_bits();
+                match deltas.iter().find(|d| d.0 == bits) {
+                    Some(d) => out.push_str(&d.1),
+                    None => {
+                        let f = format!("{delta:+.3}");
+                        out.push_str(&f);
+                        deltas.push((bits, f));
+                    }
+                }
+            }
+        }
     }
 
     /// Format a candidate as a peptide string: `K.SAM+15.995PLER.A` (with flanking protein context)
