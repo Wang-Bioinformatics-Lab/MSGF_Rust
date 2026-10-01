@@ -62,7 +62,7 @@ corpus + same config ⇒ byte-identical model (verified: reordering and renaming
 reproduces the model byte-for-byte).
 
 Each section of the format is filled from a definition derived from how the *scorer* consumes it
-(`ScoringModel::score_from_table` computes `ln(ion[rank] / (noise[rank]·min(charge, segments)))`,
+(`ScoringModel::node_score` (and the scorer, `docs/cleanroom/SPEC.md` §4.3) computes `ln(ion[rank] / (noise[rank]·min(charge, segments)))`,
 so the trainer's job is to produce that ratio's numerator and denominator):
 
 | Section | Definition |

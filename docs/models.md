@@ -28,7 +28,7 @@ This doc inventories both models, states exactly what taints what, and lays out 
 | # | Model | What it is | Where it lives (code) | Where the bytes come from | License |
 |---|---|---|---|---|---|
 | 1 | **Fragment-scoring model** (`.param`) | Trained rank-scoring model per *(activation, instrument, enzyme, protocol)* | `msgf-scorer`: `read_param()` → `ScoringModel` (`rust/crates/msgf-scorer/src/lib.rs`) | MS-GF+ repo `src/main/resources/ionstat/*.param`, fetched by `validation/fetch_reference_data.sh` into `validation/data/models/` | **UC Regents, non-commercial/academic** |
-| 2 | **AA background-frequency model** | The null P(amino acid) the generating function weights edges by | `msgf-genfunc`: `AA_PROB = 0.05` and the per-edge `aa_prob` (`rust/crates/msgf-genfunc/src/graph.rs`); overridable via `msgf-cli --aa-probs <tsv>` (`load_aa_probs`, `msgf-cli/src/main.rs:460`) | Either uniform `1/20`, or counted from the searched FASTA (`count/total`) | **Ours already** (trivial arithmetic / user's data) |
+| 2 | **AA background-frequency model** | The null P(amino acid) the generating function weights edges by | `msgf-genfunc`: `NullModel` (`AlphabetEntry::prob`; `NullModel::uniform()` = 0.05 each); overridable via `msgf-cli --aa-probs <tsv>` (`load_aa_probs`, `msgf-cli/src/rescore.rs`), and taken from the searched FASTA by `msgf search` | Either uniform `1/20`, or counted from the searched FASTA (`count/total`) | **Ours already** (trivial arithmetic / user's data) |
 
 ### 1.1 What model #1 (`.param`) actually contains
 
@@ -44,7 +44,7 @@ Decoded by `read_param()` into `ScoringModel` (`msgf-scorer/src/lib.rs`). The tr
   `max_rank + 1` frequencies indexed by the observed peak's intensity **rank** (rank 1 = most
   intense; the last bin = "ion absent"), plus a parallel `noise` row. The per-site score is
   `log( ionFreq[rank] / (noiseFreq[rank] · min(ionCharge, numSegments)) )` — see
-  `ScoringModel::score_from_table` (`lib.rs:452`). **These two frequency tables are the heart of
+  `ScoringModel::node_score` (`msgf-scorer/src/param.rs`; scorer: `docs/cleanroom/SPEC.md` §4.3). **These two frequency tables are the heart of
   the model**; training is, in essence, the exercise of filling them in.
 - **`precursor_off`** (`PrecursorOff`) — precursor m/z offset frequencies (charge-reduced species,
   isotopes).
@@ -58,9 +58,9 @@ strictly **read-only** (there is no `write_param`; grep confirms only `read_para
 ### 1.2 What model #2 (AA background) contains
 
 Just P(amino acid) for the ~20 residues (plus any variable mods as distinct residues). MS-GF+'s
-default is **uniform** (`AminoAcid.probability = 0.05`). Our F13 bit-exact result instead uses
-**DB-composition** probabilities (`count/total` over the searched FASTA) — see the `pvalue-status`
-memory and `graph.rs`. **This model is already ours** and swapping it is a non-event: it's counting
+default is **uniform** (0.05 each). Our F13 bit-exact result instead uses
+**DB-composition** probabilities (`count/total` over the searched FASTA) — see `msgf-genfunc`'s
+`NullModel` and `docs/cleanroom/SPEC.md` §8.2. **This model is already ours** and swapping it is a non-event: it's counting
 residues, not licensed data. It affects the SpecEValue *distribution*, not the integer RawScore.
 
 ---
@@ -125,7 +125,7 @@ PSMs — no gradient descent, fully reproducible. For each partition *(charge ×
 2. **Rank distributions** — for each scored ion type, histogram the **intensity rank** of the
    matched peak (1..`max_rank`, plus an "absent" bin) over true cleavage sites → `ionFreq[]`; do the
    same for random/decoy positions → `noiseFreq[]`. These two rows are exactly what
-   `score_from_table` consumes → populates `rank_dist`. **This is the load-bearing step.**
+   `node_score` consumes → populates `rank_dist`. **This is the load-bearing step.**
 3. **Precursor offset frequencies** — histogram precursor m/z offsets → `precursor_off`.
 4. **Mass-error distributions** — per-partition signal vs. noise mass-error histograms + ion
    existence → `error_dist` (the high-res term).
@@ -177,10 +177,11 @@ msgf-train/
   bin/train.rs# CLI: msgf-train --corpus <...> --activation HCD --instrument HighRes --enzyme Tryp -o model
 ```
 
-The counting logic re-uses `msgf-chem` (ion m/z, tolerance, `round_half_up`) and mirrors the exact
-bin/threshold definitions in MS-GF+'s `ScoringParameterGeneratorWithErrors` (partition boundaries,
-`max_rank`, `error_scaling_factor`, ion-type candidate list). Those constants must be read out of
-the Java source — budget time for it, same as the `.param` format reverse-engineering in Phase 0.
+The counting logic re-uses `msgf-chem` (ion m/z, tolerance, `round_half_up`). *(Superseded
+planning note: an earlier draft of this section proposed reading bin/threshold constants out of
+MS-GF+'s Java training code. That was not done — `msgf-train` defines its statistics from how the
+scorer consumes each table, see `docs/training.md` — and it must not be done: since 2026-09-30 the
+project reads no MS-GF+ source at all. See `LICENSING.md` §3.)*
 
 ### 4.4 Validation — how we trust a model we trained
 
@@ -205,7 +206,8 @@ independent regression oracle.
 ### 4.5 The AA background model (model #2) — essentially free
 
 Retraining model #2 is counting residues in a reference proteome (e.g. UniProt human) or, at search
-time, in the searched FASTA — the DB-composition path already exists (`graph.rs`, F13 result). No
+time, in the searched FASTA — the DB-composition path already exists (`msgf-search` builds the
+`NullModel` from the database; F13 result). No
 license issue, no new corpus. Provide a small default table (permissive) for the no-DB case and
 keep the runtime DB-composition path. Done essentially for free alongside #1.
 
@@ -269,7 +271,8 @@ this is the concrete execution of D1's "A now, B later.")*
   parity gate must be judged on the raw-trained v1, not just v0.
 - **Coverage skew** — MassIVE-KB is human/HCD/tryptic-heavy; CID/ETD/labeled/non-tryptic need other
   CC0 corpora (or are deferred).
-- **Decoy/noise model for `noiseFreq[]`** — need to pin exactly how MS-GF+ defines the noise
-  population (random positions vs. decoy peptides) to match gate 1; read the Java, don't assume.
+- **Decoy/noise model for `noiseFreq[]`** — how the noise population is defined (random positions
+  vs. decoy peptides) is settled in `docs/training.md`; judge it by black-box comparison of trained
+  tables and scores, never by reading MS-GF+'s Java (`LICENSING.md` §3).
 - **Parity margin must be agreed up front** (as we did for the |Δlog10| ≤ 0.05 SpecEValue
   tolerance), so "good enough to ship" is objective.

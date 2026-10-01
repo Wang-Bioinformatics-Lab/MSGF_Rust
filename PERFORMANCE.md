@@ -1,5 +1,25 @@
 # Performance — MSGF_Rust vs. MS-GF+ (Java)
 
+> **Historical (2026-09-30).** Everything below measures the scorer and generating function *before*
+> the clean-room replacement (`LICENSING.md` §3, `docs/cleanroom/`). That implementation, including
+> its CSR graph, arena, AVX kernel and tilt pruning, no longer exists. The clean-room code produces
+> byte-identical output.
+>
+> Indicative timings on the 32-core dev VM, which was under load from other jobs: HeLa subset,
+> 17,724 PSMs, 2,960 (scan, charge) groups. Each figure is the median of three runs.
+>
+> | workload | `0fb0738` | clean-room |
+> |---|--:|--:|
+> | `rescore`, ti 0,1 | 5.5 s | 5.3 s |
+> | `rescore`, ti 0,0 | 3.0 s | 3.6 s |
+> | `rescore`, ti −1,2 | 6.8 s | 9.1 s |
+> | `rescore`, composition + oxM | 4.6 s | 7.4 s |
+> | `search` -n 5, 16 threads | 2.4 s | 2.6 s |
+> | `search` -n 5, 1 thread | 15.7 s | 12.7 s |
+>
+> The rescore cost of the wider-alphabet and wider-isotope sets is the lost DP optimizations. If
+> they are worth re-deriving, do it from `docs/cleanroom/SPEC.md` §8, never from the old code.
+
 Measured speed of the **MS-GF+ significance scoring** (the generating-function spectral E-value —
 the "MSGF scoring" this project reimplements) in Rust versus the reference Java implementation, on
 real high-resolution data. **The Rust output is bit-exact** to MS-GF+ (DeNovoScore + SpecEValue

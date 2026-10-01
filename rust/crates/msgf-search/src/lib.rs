@@ -11,7 +11,7 @@
 //! use msgf_db::{fasta::ProteinDb, enzyme::DigestParams, fasta::DEFAULT_DECOY_PREFIX};
 //! use msgf_search::{index::PeptideIndex, mods::ModSet, SearchEngine, SearchParams, assign_q_values};
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let model = msgf_scorer::read_param_file("HCD_HighRes_Tryp.param")?;
+//! let model = msgf_scorer::ScoreModel::from_file("HCD_HighRes_Tryp.param")?;
 //! let db = ProteinDb::read("human.revCat.fasta", DEFAULT_DECOY_PREFIX)?;
 //! let (digest, mods) = (DigestParams::default(), ModSet::default());
 //!

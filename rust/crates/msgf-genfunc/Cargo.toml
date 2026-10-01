@@ -4,17 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "MS-GF+ generating function: spectral probability (SpecEValue / p-value) via a score-distribution DP over the de novo graph"
+description = "Generating function for MSGF_Rust: DeNovoScore and spectral probability (SpecEValue) via a score-distribution DP over the amino-acid graph"
 
 [dependencies]
-msgf-chem = { path = "../msgf-chem" }
 msgf-scorer = { path = "../msgf-scorer" }
 
 [dev-dependencies]
+criterion = { workspace = true }
 serde_json = { workspace = true }
 msgf-io = { path = "../msgf-io" }
-criterion = { workspace = true }
-rayon = { workspace = true }
+msgf-chem = { path = "../msgf-chem" }
 
 [[bench]]
 name = "genfunc"

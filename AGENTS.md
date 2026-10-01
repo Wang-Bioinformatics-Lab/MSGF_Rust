@@ -6,6 +6,8 @@ The Rust workspace lives in `rust/`. Its crates separate chemistry, spectrum I/O
 
 `validation/` contains Python, shell, and Java tooling for reference-data retrieval and golden generation. Technical specifications are in `docs/`; consult `docs/param-format.md` before changing model serialization and `docs/training.md` before changing training counts. See `LICENSING.md` before adding data or models.
 
+**Clean-room rule.** Never read MS-GF+'s Java source (or decompiled jar classes), and never read the pre-2026-09-30 versions of `msgf-scorer/src/{preprocess,scored_spectrum,lib}.rs` or `msgf-genfunc/src/{lib,graph}.rs` in git history (commit `0fb0738` and earlier). The scorer and generating function are a clean-room implementation; their normative description is `docs/cleanroom/SPEC.md`, and behaviour is checked only by black-box comparison of outputs. See `LICENSING.md` §3 and `docs/cleanroom/PROVENANCE.md`.
+
 ## Build, Test, and Development Commands
 
 Run Rust commands from `rust/`:
@@ -17,12 +19,13 @@ Run Rust commands from `rust/`:
 - `cargo clippy --workspace --all-targets` checks common correctness and style issues.
 - `cargo fmt --all --check` verifies formatting; use `cargo fmt --all` to apply it.
 - `cargo bench -p msgf-genfunc --bench genfunc` runs the generating-function benchmark.
+- `MSGF_CLEANROOM_VECTORS=<test_vectors dir> cargo test -p msgf-cli --release --test cleanroom_vectors` checks byte-identity against the clean-room test vectors.
 
 From `validation/`, run `python3 regression/run_regression.py` to re-derive and verify available fixtures.
 
 ## Coding Style & Naming Conventions
 
-Use Rust 2021 conventions and rustfmt defaults (four-space indentation). Name modules, functions, and test files in `snake_case`; types and traits in `UpperCamelCase`; constants in `SCREAMING_SNAKE_CASE`. Keep crate responsibilities narrow and public APIs documented. In fidelity-sensitive scoring code, matching Java arithmetic and operation order takes precedence over stylistic refactoring.
+Use Rust 2021 conventions and rustfmt defaults (four-space indentation). Name modules, functions, and test files in `snake_case`; types and traits in `UpperCamelCase`; constants in `SCREAMING_SNAKE_CASE`. Keep crate responsibilities narrow and public APIs documented. In fidelity-sensitive scoring code, matching the arithmetic and operation order prescribed by `docs/cleanroom/SPEC.md` takes precedence over stylistic refactoring.
 
 ## Testing Guidelines
 

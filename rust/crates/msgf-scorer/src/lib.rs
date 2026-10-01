@@ -1,500 +1,148 @@
-//! msgf-scorer — reader for MS-GF+ binary scoring models (`.param`).
+//! # msgf-scorer — the `.param` scoring model and the RawScore of a peptide-spectrum match
 //!
-//! The `.param` files are written by `NewRankScorer.writeParameters` (Java `DataOutputStream`,
-//! big-endian) and hold a trained rank-scoring model per (activation, instrument, enzyme,
-//! protocol). This module decodes that format faithfully. The stream ends with an
-//! `0x7FFFFFFF` sentinel that MS-GF+ itself checks; we validate it too, so a misaligned parse
-//! is caught rather than silently accepted.
+//! Two halves:
 //!
-//! Validated against `validation/golden/models/*.model.golden.json` (derived from the
-//! authoritative `writeParametersPlainText` dump) in `tests/golden_model.rs`.
+//! - **The model file.** [`ScoringModel`] is the `.param` format as data: [`read_param`] decodes
+//!   it, [`write_param`] encodes it (the trainer, `msgf-train`, emits models through it). The
+//!   format is documented in `docs/param-format.md`. [`bundled`] embeds the MIT/CC0 model this
+//!   project trained itself.
+//! - **Scoring.** [`ScoreModel`] is a model decoded for scoring (derived log-likelihood tables).
+//!   [`prepare`] turns one MS/MS spectrum at one charge into a [`PreparedSpectrum`] (peak order,
+//!   precursor suppression, ranks, isotope-cluster reduction, per-segment partitions, node and
+//!   edge tables), and [`match_and_terminal_score`] gives a candidate's **RawScore** against it.
+//!   The generating function that turns a RawScore into a SpecEValue lives in `msgf-genfunc`.
 //!
-//! Per-node spectrum scoring (RawScore) is built on top of this model next.
+//! ## Provenance
+//!
+//! The scoring half (`model.rs`, `spectrum.rs`, `candidate.rs`, and the constants and rounding
+//! conventions in this file) is a **clean-room** implementation: written from a functional
+//! specification (`docs/cleanroom/SPEC.md`) distilled from the published MS-GF papers and
+//! black-box behaviour, by an implementer who never saw MS-GF+ source or this repository's prior
+//! code. It was written in DIA_Proteomics_Rust (`rust/src/dda/specprob/`, commit `b4485bb`, merged
+//! as `b930875`; MIT OR Apache-2.0, same author) and brought here unchanged apart from module
+//! layout and the [`preprocess`] entry point for the trainer. See `docs/cleanroom/PROVENANCE.md`.
+//! The `.param` reader in `param.rs` was written from `docs/param-format.md`.
+//!
+//! ```no_run
+//! use msgf_scorer::{bundled, match_and_terminal_score, prepare, Candidate, Cleavage, Ms2, Residue};
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let model = bundled::score_model()?;
+//! let peaks: Vec<(f64, f64)> = vec![(175.119, 1000.0), (276.155, 800.0)];
+//! let prep = prepare(&model, &Ms2 { peaks: &peaks, precursor_mz: 400.2, charge: 2 })
+//!     .expect("plausible precursor");
+//! let residues: Vec<Residue> =
+//!     b"SAMPLER".iter().map(|&l| Residue { letter: l, delta: 0.0 }).collect();
+//! let cand = Candidate { residues: &residues, n_term_credit: true };
+//! let raw = match_and_terminal_score(&prep, &cand, &Cleavage::trypsin()).expect("standard residues");
+//! # let _ = raw; Ok(()) }
+//! ```
+//!
+//! The SpecEValue of `raw` comes from `msgf_genfunc::score_distribution(&prep, &null, Some(raw))`.
 
-#[cfg(feature = "bundled-model")]
 pub mod bundled;
-pub mod preprocess;
-pub mod scored_spectrum;
-pub mod write;
+mod candidate;
+mod cleavage;
+mod model;
+mod param;
+mod spectrum;
+mod write;
 
+pub use candidate::{
+    cumulative_nominal, match_and_terminal_parts, match_and_terminal_score, Candidate, Residue,
+};
+pub use cleavage::Cleavage;
+pub use model::{IonType, ModelError, Partition as ScorePartition, ScoreModel};
+pub use param::{
+    read_param, read_param_file, ErrorDist, FragOff, ParamError, Partition, PrecursorOff, RankDist,
+    ScoringModel, TERMINATOR,
+};
+pub use spectrum::{
+    peak_by_mass, prepare, prepare_with_cache, preprocess, Ms2, PreparedSpectrum, PreprocessParams,
+    RankedPeak,
+};
 pub use write::{write_param, write_param_file};
 
-use msgf_chem::Tolerance;
-use std::fs;
-use std::io;
-use std::path::Path;
+// ---- physical constants (Da) -------------------------------------------------------------------
 
-/// Terminator written after all model data (`Integer.MAX_VALUE`).
-const TERMINATOR: i32 = i32::MAX;
+const M_H: f64 = 1.0078250319;
+const M_C: f64 = 12.0;
+const M_N: f64 = 14.0030740052;
+const M_O: f64 = 15.9949146221;
+const M_S: f64 = 31.9720707300;
+/// Water, as the elemental sum.
+pub const WATER: f64 = 2.0 * M_H + M_O;
+/// Proton mass used to strip the precursor charge.
+pub const PROTON: f64 = 1.0072764669;
+/// Charge-carrier mass used by precursor suppression and isotope reduction (used as f32).
+const CARRIER: f64 = 1.00727649;
+/// First and second isotope spacings of the isotope-cluster reduction (used as f32).
+const ISO_STEP1: f64 = 13.00335483 - 12.0;
+const ISO_STEP2: f64 = 14.003241 - 13.00335483;
+/// Real mass to nominal-grid scaler.
+pub const NOMINAL_SCALE: f32 = 0.999497;
 
-/// A scoring partition: (precursor charge, parent mass boundary, mass segment index).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Partition {
-    pub charge: i32,
-    pub parent_mass: f32,
-    pub seg: i32,
-}
+/// Elemental formulas `[C, H, N, O, S]` of the 20 residues (free amino acid minus water).
+const FORMULAS: [(u8, [u32; 5]); 20] = [
+    (b'G', [2, 3, 1, 1, 0]),
+    (b'A', [3, 5, 1, 1, 0]),
+    (b'S', [3, 5, 1, 2, 0]),
+    (b'P', [5, 7, 1, 1, 0]),
+    (b'V', [5, 9, 1, 1, 0]),
+    (b'T', [4, 7, 1, 2, 0]),
+    (b'C', [3, 5, 1, 1, 1]),
+    (b'L', [6, 11, 1, 1, 0]),
+    (b'I', [6, 11, 1, 1, 0]),
+    (b'N', [4, 6, 2, 2, 0]),
+    (b'D', [4, 5, 1, 3, 0]),
+    (b'Q', [5, 8, 2, 2, 0]),
+    (b'K', [6, 12, 2, 1, 0]),
+    (b'E', [5, 7, 1, 3, 0]),
+    (b'M', [5, 9, 1, 1, 1]),
+    (b'H', [6, 7, 3, 1, 0]),
+    (b'F', [9, 9, 1, 1, 0]),
+    (b'R', [6, 12, 4, 1, 0]),
+    (b'Y', [9, 9, 1, 2, 0]),
+    (b'W', [11, 10, 2, 1, 0]),
+];
 
-/// A fragment-ion offset-frequency entry (one theoretical ion type in a partition).
-#[derive(Debug, Clone, PartialEq)]
-pub struct FragOff {
-    pub is_prefix: bool,
-    pub charge: i32,
-    pub offset: f32,
-    pub frequency: f32,
-    /// Name as MS-GF+ builds it: `"P_{charge}_{round(offset)}"` / `"S_{charge}_{round(offset)}"`.
-    pub name: String,
-}
+/// The 20 residue letters in the conventional alphabet order used by the null model.
+pub const RESIDUE_ORDER: &[u8; 20] = b"GASPVTCLINDQKEMHFRYW";
 
-impl FragOff {
-    /// Theoretical m/z of this ion for a prefix/suffix residue mass, per `IonType.getMz`:
-    /// `residue_mass / charge + offset`.
-    #[inline]
-    pub fn mz(&self, residue_mass: f32) -> f32 {
-        residue_mass / self.charge as f32 + self.offset
-    }
-
-    /// Inverse of [`FragOff::mz`], per `IonType.getMass`: `(mz - offset) * charge`.
-    #[inline]
-    pub fn mass(&self, mz: f32) -> f32 {
-        (mz - self.offset) * self.charge as f32
-    }
-}
-
-/// A precursor offset-frequency entry.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PrecursorOff {
-    pub charge: i32,
-    pub reduced_charge: i32,
-    pub offset: f32,
-    pub tol_ppm: bool,
-    pub tol_val: f32,
-    pub frequency: f32,
-}
-
-/// Rank-distribution table for one partition: each ion type (fragment ions in read order, then
-/// `noise`) maps to `max_rank + 1` frequencies indexed by observed peak rank.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RankDist {
-    pub partition_index: usize,
-    pub ions: Vec<(String, Vec<f32>)>,
-}
-
-/// Mass-error distribution for one partition.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ErrorDist {
-    pub signal: Vec<f32>,
-    pub noise: Vec<f32>,
-    pub ion_existence: [f32; 4],
-}
-
-/// A fully decoded MS-GF+ scoring model.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScoringModel {
-    pub version: i32,
-    pub activation: String,
-    pub instrument: String,
-    pub enzyme: Option<String>,
-    pub protocol: Option<String>, // None == Automatic
-    pub mme: Tolerance,
-    pub apply_deconvolution: bool,
-    pub deconvolution_error_tolerance: f32,
-    pub charge_histogram: Vec<(i32, i32)>,
-    pub num_segments: i32,
-    /// Partitions in MS-GF+ `TreeSet` order: (charge, seg, parent_mass).
-    pub partitions: Vec<Partition>,
-    pub precursor_off: Vec<PrecursorOff>,
-    /// Fragment offset frequencies, parallel to `partitions`.
-    pub frag_off: Vec<Vec<FragOff>>,
-    pub max_rank: i32,
-    /// Rank distributions (only for partitions that have ≥1 fragment ion type).
-    pub rank_dist: Vec<RankDist>,
-    pub error_scaling_factor: i32,
-    /// Error distributions, parallel to `partitions` (empty if `error_scaling_factor == 0`).
-    pub error_dist: Vec<ErrorDist>,
-}
-
-/// Failure decoding a `.param` stream.
-#[derive(Debug)]
-pub enum ParamError {
-    /// Ran off the end of the buffer at `pos`.
-    UnexpectedEof {
-        pos: usize,
-        need: usize,
-    },
-    /// The trailing sentinel was wrong — the parse desynced somewhere.
-    BadTerminator {
-        got: i32,
-        pos: usize,
-    },
-    Io(io::Error),
-}
-
-impl std::fmt::Display for ParamError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParamError::UnexpectedEof { pos, need } => {
-                write!(f, "unexpected EOF at {pos} (need {need} bytes)")
-            }
-            ParamError::BadTerminator { got, pos } => {
-                write!(f, "bad terminator {got:#x} at {pos} (parse desynced)")
-            }
-            ParamError::Io(e) => write!(f, "io: {e}"),
-        }
-    }
-}
-impl std::error::Error for ParamError {}
-impl From<io::Error> for ParamError {
-    fn from(e: io::Error) -> Self {
-        ParamError::Io(e)
-    }
-}
-
-/// Big-endian reader mirroring Java `DataInputStream`.
-struct Reader<'a> {
-    b: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(b: &'a [u8]) -> Self {
-        Self { b, pos: 0 }
-    }
-    fn take(&mut self, n: usize) -> Result<&'a [u8], ParamError> {
-        if self.pos + n > self.b.len() {
-            return Err(ParamError::UnexpectedEof {
-                pos: self.pos,
-                need: n,
-            });
-        }
-        let s = &self.b[self.pos..self.pos + n];
-        self.pos += n;
-        Ok(s)
-    }
-    fn u8(&mut self) -> Result<u8, ParamError> {
-        Ok(self.take(1)?[0])
-    }
-    fn bool(&mut self) -> Result<bool, ParamError> {
-        Ok(self.u8()? != 0)
-    }
-    fn i32(&mut self) -> Result<i32, ParamError> {
-        Ok(i32::from_be_bytes(self.take(4)?.try_into().unwrap()))
-    }
-    fn f32(&mut self) -> Result<f32, ParamError> {
-        Ok(f32::from_be_bytes(self.take(4)?.try_into().unwrap()))
-    }
-    /// Java `writeByte(len)` + `writeChars` (len UTF-16BE chars).
-    fn jstring(&mut self) -> Result<String, ParamError> {
-        let len = self.u8()? as usize;
-        let mut s = String::with_capacity(len);
-        for _ in 0..len {
-            let hi = self.u8()? as u16;
-            let lo = self.u8()? as u16;
-            s.push(char::from_u32(((hi << 8) | lo) as u32).unwrap_or('\u{FFFD}'));
-        }
-        Ok(s)
-    }
-}
-
-/// Java `Math.round` for the ion-name suffix: `floor(x + 0.5)`.
-fn java_round(x: f32) -> i64 {
-    (x + 0.5).floor() as i64
-}
-
-/// Decode a `.param` model from raw bytes.
-pub fn read_param(bytes: &[u8]) -> Result<ScoringModel, ParamError> {
-    let mut r = Reader::new(bytes);
-
-    let version = r.i32()?;
-    let activation = r.jstring()?;
-    let instrument = r.jstring()?;
-    let enzyme = {
-        // length-0 => absent; jstring already handles len byte
-        let start = r.pos;
-        let s = r.jstring()?;
-        if r.pos == start + 1 {
-            None
-        } else {
-            Some(s)
-        } // len byte was 0
-    };
-    let protocol = {
-        let start = r.pos;
-        let s = r.jstring()?;
-        if r.pos == start + 1 {
-            None
-        } else {
-            Some(s)
-        }
-    };
-
-    let mme_ppm = r.bool()?;
-    let mme_val = r.f32()?;
-    let mme = if mme_ppm {
-        Tolerance::ppm(mme_val as f64)
-    } else {
-        Tolerance::da(mme_val as f64)
-    };
-
-    let apply_deconvolution = r.bool()?;
-    let deconvolution_error_tolerance = r.f32()?;
-
-    // charge histogram
-    let n = r.i32()? as usize;
-    let mut charge_histogram = Vec::with_capacity(n);
-    for _ in 0..n {
-        let charge = r.i32()?;
-        let count = r.i32()?;
-        charge_histogram.push((charge, count));
-    }
-
-    // partitions
-    let n = r.i32()? as usize;
-    let num_segments = r.i32()?;
-    let mut partitions = Vec::with_capacity(n);
-    for _ in 0..n {
-        let charge = r.i32()?;
-        let parent_mass = r.f32()?;
-        let seg = r.i32()?;
-        partitions.push(Partition {
-            charge,
-            parent_mass,
-            seg,
-        });
-    }
-    // MS-GF+ stores these in a TreeSet: order by (charge, seg, parent_mass), unique.
-    partitions.sort_by(|a, b| {
-        a.charge
-            .cmp(&b.charge)
-            .then(a.seg.cmp(&b.seg))
-            .then(a.parent_mass.partial_cmp(&b.parent_mass).unwrap())
-    });
-    partitions
-        .dedup_by(|a, b| a.charge == b.charge && a.seg == b.seg && a.parent_mass == b.parent_mass);
-
-    // precursor offset frequencies
-    let n = r.i32()? as usize;
-    let mut precursor_off = Vec::with_capacity(n);
-    for _ in 0..n {
-        let charge = r.i32()?;
-        let reduced_charge = r.i32()?;
-        let offset = r.f32()?;
-        let tol_ppm = r.bool()?;
-        let tol_val = r.f32()?;
-        let frequency = r.f32()?;
-        precursor_off.push(PrecursorOff {
-            charge,
-            reduced_charge,
-            offset,
-            tol_ppm,
-            tol_val,
-            frequency,
-        });
-    }
-
-    // fragment offset frequencies — one block per partition, in sorted order
-    let mut frag_off: Vec<Vec<FragOff>> = Vec::with_capacity(partitions.len());
-    for _ in 0..partitions.len() {
-        let size = r.i32()? as usize;
-        let mut block = Vec::with_capacity(size);
-        for _ in 0..size {
-            let is_prefix = r.bool()?;
-            let charge = r.i32()?;
-            let offset = r.f32()?;
-            let frequency = r.f32()?;
-            let tag = if is_prefix { 'P' } else { 'S' };
-            let name = format!("{tag}_{charge}_{}", java_round(offset));
-            block.push(FragOff {
-                is_prefix,
-                charge,
-                offset,
-                frequency,
-                name,
-            });
-        }
-        frag_off.push(block);
-    }
-
-    // rank distributions — per partition with ≥1 ion type, ions then NOISE
-    let max_rank = r.i32()?;
-    let ncols = (max_rank + 1) as usize;
-    let mut rank_dist = Vec::new();
-    for (pi, block) in frag_off.iter().enumerate() {
-        if block.is_empty() {
-            continue; // getIonTypes empty => MS-GF+ skips this partition
-        }
-        let mut ions = Vec::with_capacity(block.len() + 1);
-        for fo in block {
-            let mut freqs = Vec::with_capacity(ncols);
-            for _ in 0..ncols {
-                freqs.push(r.f32()?);
-            }
-            ions.push((fo.name.clone(), freqs));
-        }
-        let mut noise = Vec::with_capacity(ncols);
-        for _ in 0..ncols {
-            noise.push(r.f32()?);
-        }
-        ions.push(("noise".to_string(), noise));
-        rank_dist.push(RankDist {
-            partition_index: pi,
-            ions,
-        });
-    }
-
-    // error distributions
-    let error_scaling_factor = r.i32()?;
-    let mut error_dist = Vec::new();
-    if error_scaling_factor > 0 {
-        let width = (error_scaling_factor * 2 + 1) as usize;
-        for _ in 0..partitions.len() {
-            let mut signal = Vec::with_capacity(width);
-            for _ in 0..width {
-                signal.push(r.f32()?);
-            }
-            let mut noise = Vec::with_capacity(width);
-            for _ in 0..width {
-                noise.push(r.f32()?);
-            }
-            let mut ion_existence = [0.0f32; 4];
-            for slot in &mut ion_existence {
-                let v = r.f32()?;
-                *slot = if v == 0.0 { 0.001 } else { v };
-            }
-            error_dist.push(ErrorDist {
-                signal,
-                noise,
-                ion_existence,
-            });
-        }
-    }
-
-    // sentinel — proves the whole parse stayed aligned
-    let term = r.i32()?;
-    if term != TERMINATOR {
-        return Err(ParamError::BadTerminator {
-            got: term,
-            pos: r.pos - 4,
-        });
-    }
-
-    Ok(ScoringModel {
-        version,
-        activation,
-        instrument,
-        enzyme,
-        protocol,
-        mme,
-        apply_deconvolution,
-        deconvolution_error_tolerance,
-        charge_histogram,
-        num_segments,
-        partitions,
-        precursor_off,
-        frag_off,
-        max_rank,
-        rank_dist,
-        error_scaling_factor,
-        error_dist,
+/// Monoisotopic residue mass (binary64 elemental sum), or `None` for a non-standard letter.
+pub fn residue_mass(letter: u8) -> Option<f64> {
+    FORMULAS.iter().find(|(l, _)| *l == letter).map(|(_, f)| {
+        f[0] as f64 * M_C
+            + f[1] as f64 * M_H
+            + f[2] as f64 * M_N
+            + f[3] as f64 * M_O
+            + f[4] as f64 * M_S
     })
 }
 
-/// Read and decode a `.param` file from disk.
-pub fn read_param_file<P: AsRef<Path>>(path: P) -> Result<ScoringModel, ParamError> {
-    read_param(&fs::read(path)?)
+// ---- rounding conventions (all saturating; NaN -> 0, as Rust `as` casts do) -------------------
+
+/// Score rounding: `floor(x + 0.5)` with the addition in f32 (halves go up).
+#[inline]
+pub(crate) fn round_score(x: f32) -> i32 {
+    (x + 0.5f32).floor() as i32
 }
 
-impl RankDist {
-    /// Frequency row for an ion by name (`None` if the ion is not scored in this partition).
-    pub(crate) fn row(&self, name: &str) -> Option<&[f32]> {
-        self.ions
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v.as_slice())
-    }
-    /// The noise row (always stored last).
-    fn noise_row(&self) -> &[f32] {
-        &self
-            .ions
-            .last()
-            .expect("rank distribution has a noise row")
-            .1
-    }
+/// Nominal rounding: nearest, halves away from zero, on an f32 value.
+#[inline]
+pub(crate) fn round_nominal(x: f32) -> i32 {
+    x.round() as i32
 }
 
-impl ScoringModel {
-    /// Protocol name, mapping the absent case to MS-GF+'s `"Automatic"` default.
-    pub fn protocol_name(&self) -> &str {
-        self.protocol.as_deref().unwrap_or("Automatic")
-    }
+/// Real mass -> nominal integer.
+#[inline]
+pub fn nominal(m: f64) -> i32 {
+    round_nominal(m as f32 * NOMINAL_SCALE)
+}
 
-    /// Rank distribution for a partition index (only partitions with ≥1 ion have one).
-    pub fn rank_dist_for(&self, partition_index: usize) -> Option<&RankDist> {
-        self.rank_dist
-            .iter()
-            .find(|r| r.partition_index == partition_index)
-    }
-
-    /// Log-likelihood score for observing `ion`'s peak at 1-based `rank` (rank 1 = most intense)
-    /// in partition `partition_index`. Mirrors `NewRankScorer.getNodeScore`.
-    pub fn node_score(&self, partition_index: usize, ion: &FragOff, rank: i32) -> f32 {
-        let idx = if rank > self.max_rank {
-            (self.max_rank - 1) as usize
-        } else {
-            (rank - 1) as usize
-        };
-        self.score_from_table(partition_index, ion, idx)
-    }
-
-    /// Log-likelihood score for `ion`'s peak being absent (the `maxRank` bin).
-    /// Mirrors `NewRankScorer.getMissingIonScore`.
-    pub fn missing_ion_score(&self, partition_index: usize, ion: &FragOff) -> f32 {
-        self.score_from_table(partition_index, ion, self.max_rank as usize)
-    }
-
-    /// Append every distinct [`Self::score_from_table`] result for one `(partition, ion)` to `out`,
-    /// in rank-bin order: bin `r - 1` is rank `r`, and the last bin (`max_rank`) is the missing-ion
-    /// score.
-    ///
-    /// This resolves the partition's rank distribution and the ion's row **once**, where
-    /// `score_from_table` repeats a linear scan over every partition's rank distribution and a
-    /// name-string row search on each call. The arithmetic per bin is character-for-character the
-    /// same, so the values are bit-identical.
-    ///
-    /// Returns `false`, appending nothing, when the partition has no rank distribution or the ion
-    /// has no row — the cases `score_from_table` panics on. Callers can then fall back to it and
-    /// preserve that panic.
-    pub fn extend_score_bins(
-        &self,
-        partition_index: usize,
-        ion: &FragOff,
-        out: &mut Vec<f32>,
-    ) -> bool {
-        let Some(rd) = self.rank_dist_for(partition_index) else {
-            return false;
-        };
-        let Some(ion_row) = rd.row(&ion.name) else {
-            return false;
-        };
-        let noise_row = rd.noise_row();
-        let charge_factor = ion.charge.min(self.num_segments) as f32;
-        for bin in 0..=(self.max_rank.max(0) as usize) {
-            let noise = noise_row[bin] * charge_factor;
-            out.push(((ion_row[bin] / noise) as f64).ln() as f32);
-        }
-        true
-    }
-
-    /// `log( ionFreq[idx] / (noiseFreq[idx] * min(ionCharge, numSegments)) )`, computed in the
-    /// same float order as Java (`NewRankScorer.getScoreFromTable`, `isError = false`).
-    fn score_from_table(&self, partition_index: usize, ion: &FragOff, idx: usize) -> f32 {
-        let rd = self
-            .rank_dist_for(partition_index)
-            .expect("partition has a rank distribution");
-        let ion_freq = rd.row(&ion.name).expect("ion is scored in this partition")[idx];
-        let noise = rd.noise_row()[idx] * ion.charge.min(self.num_segments) as f32;
-        ((ion_freq / noise) as f64).ln() as f32
-    }
+/// Nominal integer -> representative real mass (f32).
+#[inline]
+pub(crate) fn nominal_to_real(k: i32) -> f32 {
+    k as f32 / NOMINAL_SCALE
 }
 
 #[cfg(test)]
@@ -502,33 +150,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn java_round_matches() {
-        assert_eq!(java_round(19.01839), 19);
-        assert_eq!(java_round(1.9918417), 2);
-        assert_eq!(java_round(-26.98709), -27);
-        assert_eq!(java_round(1.007825), 1);
+    fn rounding_conventions() {
+        assert_eq!(round_score(-2.5), -2);
+        assert_eq!(round_score(2.5), 3);
+        assert_eq!(round_score(f32::NAN), 0);
+        assert_eq!(round_score(f32::NEG_INFINITY), i32::MIN);
+        assert_eq!(round_nominal(-2.5), -3);
+        assert_eq!(round_nominal(2.5), 3);
     }
 
     #[test]
-    fn frag_ion_mz_and_roundtrip() {
-        // b1 ion (charge 1, proton offset): mz = residueMass + proton
-        let b = FragOff {
-            is_prefix: true,
-            charge: 1,
-            offset: 1.007825,
-            frequency: 0.1,
-            name: "P_1_1".into(),
-        };
-        assert!((b.mz(226.095_36) - 227.103_18).abs() < 1e-3);
-        // charge-2 round trip
-        let d = FragOff {
-            is_prefix: false,
-            charge: 2,
-            offset: 1.5,
-            frequency: 0.1,
-            name: "S_2_2".into(),
-        };
-        assert!((d.mz(200.0) - 101.5).abs() < 1e-6);
-        assert!((d.mass(d.mz(200.0)) - 200.0).abs() < 1e-4);
+    fn residue_nominal_masses() {
+        let noms: Vec<i32> = RESIDUE_ORDER
+            .iter()
+            .map(|&l| nominal(residue_mass(l).unwrap()))
+            .collect();
+        assert_eq!(
+            noms,
+            [
+                57, 71, 87, 97, 99, 101, 103, 113, 113, 114, 115, 128, 128, 129, 131, 137, 147,
+                156, 163, 186
+            ]
+        );
+        assert!(residue_mass(b'J').is_none());
+    }
+
+    /// Callers build candidates with `msgf_chem`'s masses and grid; the scorer must agree with
+    /// them bit for bit, or a RawScore would depend on which crate computed a residue mass.
+    #[test]
+    fn agrees_with_msgf_chem() {
+        for &l in RESIDUE_ORDER {
+            let a = residue_mass(l).unwrap();
+            let b = msgf_chem::residue_mass(l).unwrap();
+            assert_eq!(a.to_bits(), b.to_bits(), "residue {}", l as char);
+            assert_eq!(nominal(a), msgf_chem::scaling::nominal_bin(a as f32));
+        }
+        assert_eq!(WATER.to_bits(), msgf_chem::mass::WATER.to_bits());
+        assert_eq!(PROTON.to_bits(), msgf_chem::mass::PROTON.to_bits());
+        assert_eq!(NOMINAL_SCALE, msgf_chem::scaling::NOMINAL);
     }
 }

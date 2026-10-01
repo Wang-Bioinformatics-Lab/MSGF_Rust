@@ -8,22 +8,22 @@
 
 use std::path::Path;
 
-use msgf_scorer::ScoringModel;
+use msgf_scorer::ScoreModel;
 
 /// Load the model for a run: the file if one was given, otherwise the bundled default.
 ///
 /// Returns the model and a human-readable description of where it came from — printed to stderr so
 /// a result table can always be traced back to the model that produced it.
-pub fn load(param: Option<&Path>) -> Result<(ScoringModel, String), String> {
+pub fn load(param: Option<&Path>) -> Result<(ScoreModel, String), String> {
     match param {
         Some(p) => {
-            let m = msgf_scorer::read_param_file(p)
-                .map_err(|e| format!("reading model {}: {e:?}", p.display()))?;
+            let m = ScoreModel::from_file(p)
+                .map_err(|e| format!("reading model {}: {e}", p.display()))?;
             Ok((m, p.display().to_string()))
         }
         None => {
-            let m = msgf_scorer::bundled::model()
-                .map_err(|e| format!("decoding the bundled model: {e:?}"))?;
+            let m = msgf_scorer::bundled::score_model()
+                .map_err(|e| format!("decoding the bundled model: {e}"))?;
             Ok((
                 m,
                 format!(
@@ -37,12 +37,12 @@ pub fn load(param: Option<&Path>) -> Result<(ScoringModel, String), String> {
 }
 
 /// Report the model in use on stderr, so stdout stays a clean data stream.
-pub fn announce(source: &str, model: &ScoringModel) {
+pub fn announce(source: &str, model: &ScoreModel) {
     eprintln!(
         "model: {source} [{}/{}/{}/{}]",
         model.activation,
         model.instrument,
         model.enzyme.as_deref().unwrap_or("none"),
-        model.protocol_name()
+        model.protocol.as_deref().unwrap_or("Automatic")
     );
 }

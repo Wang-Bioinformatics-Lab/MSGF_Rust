@@ -136,7 +136,7 @@ fn search_recovers_known_peptides_with_exact_scores() {
     let fasta = dir.join("synthetic.fasta");
     std::fs::write(&fasta, format!(">SYN synthetic\n{protein}\n")).unwrap();
 
-    let model = msgf_scorer::read_param_file(&param).unwrap();
+    let model = msgf_scorer::ScoreModel::from_file(&param).unwrap();
     let db = ProteinDb::read(&fasta, DEFAULT_DECOY_PREFIX).unwrap();
     let (digest, mods, mut params) = f13_config();
     // Concatenating peptides creates junction sequences that are themselves valid tryptic
@@ -279,7 +279,7 @@ fn f13_search_matches_msgfplus() {
         want.len()
     );
 
-    let model = msgf_scorer::read_param_file(&param).unwrap();
+    let model = msgf_scorer::ScoreModel::from_file(&param).unwrap();
     let db = ProteinDb::read(&fasta, DEFAULT_DECOY_PREFIX).unwrap();
     let (digest, mods, params) = f13_config();
     let index = PeptideIndex::build(&db, &digest, &mods);

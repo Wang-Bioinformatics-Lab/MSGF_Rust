@@ -1,5 +1,12 @@
 # PLAN2 — Target–decoy and FDR
 
+> **Clean-room notice (2026-09-30).** Any instruction in this document to read, port, mine or
+> transcribe MS-GF+'s Java source is **withdrawn**. The scorer and generating function were
+> replaced by a clean-room implementation written from `docs/cleanroom/SPEC.md`. Do not read
+> MS-GF+'s Java, or the pre-`cleanroom-scorer` versions of `msgf-scorer/src/{preprocess,scored_spectrum,lib}.rs`
+> and `msgf-genfunc/src/{lib,graph}.rs` in git history. Work from the specs and from black-box
+> outputs only. See `LICENSING.md` §3. File and class references below are historical.
+
 Execution plan for target-decoy analysis (TDA): decoy database construction, PSM/peptide-level
 q-values, and how they wire into the future `msgf-search` engine. Strategy context is `plans/PLAN.md`
 (§7 Phase 6 lists "target-decoy FDR" as a single bullet); this doc is the concrete design.

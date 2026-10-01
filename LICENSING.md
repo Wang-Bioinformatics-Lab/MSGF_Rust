@@ -1,6 +1,6 @@
 # Licensing — what is in this repository, and what deliberately is not
 
-MSGF_Rust is a clean-room reimplementation of MS-GF+'s significance scoring. MS-GF+ itself is
+MSGF_Rust is a clean-room reimplementation of MS-GF+'s significance scoring (§3). MS-GF+ itself is
 **Copyright The Regents of the University of California**, licensed for educational / research /
 non-profit use with attribution — commercial use requires a UCSD Technology Transfer agreement.
 That is not an OSI licence, so a project that *ships* UC-derived bytes cannot be MIT.
@@ -12,7 +12,7 @@ of how that was achieved and what remains true.
 
 | Artifact | Origin | Licence |
 |---|---|---|
-| All Rust source (`rust/crates/**`) | written here | MIT |
+| All Rust source (`rust/crates/**`) | written here; the scoring modules of `msgf-scorer` and `msgf-genfunc` are the clean-room implementation from DIA_Proteomics_Rust `b930875` (MIT OR Apache-2.0, same copyright holder), see §3 | MIT |
 | The bundled scoring model `rust/crates/msgf-scorer/models/MSGFRust_HCD_HighRes_Tryp_v1.param` | counted by our own `msgf-train` from MassIVE-KB (MassIVE `MSV000081142`) | model: MIT; corpus: **CC0 1.0** |
 | Docs, plans, scripts (`docs/`, `validation/*.py`, `validation/*.sh`, `validation/reference/**`) | written here | MIT |
 | `validation/golden/chemistry/**` | computed from published physical constants by our own Python | MIT |
@@ -61,23 +61,96 @@ the maintainer to make deliberately, not a side effect of this cleanup.
 
 ## 3. The clean-room boundary
 
-Reproducing MS-GF+'s *arithmetic* is the job of the scorer and the DP, and that work reads the Java
-freely — algorithms and file formats are interfaces, not protected expression. Two paths are held
-deliberately separate from it:
+### 3.1 The scorer and the generating function (replaced 2026-09-30)
 
-- **The `.param` encoder** (`msgf-scorer/src/write.rs`) is written from
-  [`docs/param-format.md`](docs/param-format.md), not transcribed from
-  `NewRankScorer.writeParameters`.
+Up to commit `0fb0738`, five pieces of the scoring path described themselves as written while
+reading MS-GF+'s Java source:
+
+- `msgf-scorer/src/preprocess.rs`;
+- `msgf-scorer/src/scored_spectrum.rs`;
+- the scoring-lookup half of `msgf-scorer/src/lib.rs`;
+- `msgf-genfunc/src/lib.rs`;
+- `msgf-genfunc/src/graph.rs`.
+
+On 2026-09-30 they were **removed and replaced** by a clean-room reimplementation. The replacement
+covers spectrum preparation, node and edge scoring, RawScore, the generating function, DeNovoScore
+and SpecEValue. It was produced by a two-party process:
+
+1. **Specification (the "dirty" side).** A spec writer read the published papers (Kim, Gupta &
+   Pevzner, JPR 2008; Kim et al., MCP 2010; Kim & Pevzner, Nat Commun 2014) and this repository's
+   documentation. It read the five MSGF_Rust files for *behaviour* and ran the `0fb0738` release
+   binary as a black-box oracle. **No MS-GF+ source, jar or decompiled code was used.** From these
+   it wrote a functional specification, [`docs/cleanroom/SPEC.md`](docs/cleanroom/SPEC.md):
+   - mathematics, prose and its own pseudocode;
+   - no code from MS-GF+ or from the five files;
+   - no Java class or method names.
+
+   The spec came with test vectors recorded from the oracle. A mechanical audit against the five
+   files found 0 identical lines and 0 shared 7-word sequences.
+2. **Implementation (the "clean" side).** A separate implementer had only the spec package: the
+   spec, test vectors, the MIT model and its format document, and the oracle as a run-only black
+   box. It had **never seen MS-GF+ source or the prior translated code.** It wrote the scorer in
+   DIA_Proteomics_Rust (`rust/src/dda/specprob/`, commit `b4485bb`, merged as `b930875`; MIT OR
+   Apache-2.0, same copyright holder). The ambiguities it resolved are listed in
+   [`docs/cleanroom/SPEC_ISSUES.md`](docs/cleanroom/SPEC_ISSUES.md).
+3. **Integration.** The five pieces were deleted from this repository **unread** (`git rm` before
+   any other step). The clean-room modules were copied in as the content of `msgf-scorer` and
+   `msgf-genfunc`. The crate names and the CLI are unchanged. Only these were rewritten for the
+   new API:
+   - the callers (`msgf-cli`, `msgf-search`, `msgf-train`, `msgf`);
+   - the `.param` record decoder, written fresh from [`docs/param-format.md`](docs/param-format.md).
+
+**Validation.** The new `msgf` binary is **byte-identical** to the `0fb0738` release binary on all
+of the following:
+
+- all seven `rescore` test-vector sets (17,724 + 38 PSMs, HeLa PXD005573 and synthetic edge cases);
+- a `search` of 3,000 HeLa spectra against UniProt human;
+- rescore and search with MS-GF+'s own `.param` models on F13;
+- `decoy` and `fdr`.
+
+Because the old binary matched MS-GF+ on the F13 goldens, so does the new one.
+`rust/crates/msgf-cli/tests/cleanroom_vectors.rs` re-checks the test vectors when they are
+present.
+
+Who saw what, the sources and the dates are recorded in
+[`docs/cleanroom/PROVENANCE.md`](docs/cleanroom/PROVENANCE.md).
+
+**Going forward:** do not read MS-GF+'s Java source, or this repository's pre-`cleanroom-scorer`
+versions of the five files (they are still in git history), when working on `msgf-scorer` or
+`msgf-genfunc`. Change behaviour through `docs/cleanroom/SPEC.md` and black-box comparison only.
+
+### 3.2 The model-authoring path
+
+- **The `.param` encoder** (`msgf-scorer/src/write.rs`) and the `.param` decoder
+  (`msgf-scorer/src/param.rs`) are written from [`docs/param-format.md`](docs/param-format.md).
+  The format is an interface. The encumbered artifacts are UC's trained *numbers*, which are
+  never vendored.
 - **The trainer** (`msgf-train`) defines its statistics from how the *scorer consumes* each table,
-  never from `ScoringParameterGeneratorWithErrors`. See `docs/training.md` § "Clean-room boundary".
+  not from MS-GF+'s training code. See `docs/training.md` § "Clean-room boundary".
 
 Two tests enforce that the authoring path needs no UC bytes at all:
-`msgf-scorer::author_a_model_from_scratch` and `msgf-train::trains_a_scoring_model_from_scratch`
-build, write, re-read and score a model from synthetic data on a clean checkout.
+`msgf-scorer::author_a_model_from_scratch` and `msgf-train::trains_a_scoring_model_from_scratch`.
+They build, write, re-read and score a model from synthetic data on a clean checkout.
+
+### 3.3 What else still follows MS-GF+ behaviour
+
+**No code translated from MS-GF+ remains in the scoring path** (`msgf-scorer`, `msgf-genfunc`).
+Outside it, three components reproduce MS-GF+ *behaviour* for interoperability. They were not part
+of the 2026-09-30 replacement:
+
+- **Target-decoy FDR** (`msgf-fdr`): q-value rules specified in `plans/PLAN2.md` §1.4.
+- **Decoy FASTA construction** (`msgf-db/src/decoy.rs`): specified in `plans/PLAN2.md` §1.1.
+- **Chemistry constants** (`msgf-chem`): masses and mass-grid scalers, which are numeric facts.
+
+`plans/PLAN2.md` states that its behavioural rules came from reading the MS-GF+ Java and cites
+file and line numbers. These are short published methods: Käll *et al.* `D/T`, and reversed-protein
+decoys. If a stricter standard is wanted, the next candidates for the same spec-and-reimplement
+treatment are `msgf-fdr` and `msgf-db/src/decoy.rs`. They are listed in §5.
 
 ## 4. Attribution
 
-MS-GF+ remains the reference implementation and the oracle this project is validated against:
+MS-GF+ remains the reference implementation whose published method this project implements,
+and whose outputs (run as a black box, locally) the validation tooling compares against:
 
 > Kim, S., Pevzner, P.A. *MS-GF+ makes progress towards a universal database search tool for
 > proteomics.* Nat Commun 5, 5277 (2014).
@@ -95,5 +168,10 @@ The training corpus is MassIVE-KB:
   from MS-GF+'s F13 output) was replaced with synthetic numbers of the same shape.
 - Any *new* golden produced by running the MS-GF+ jar must follow the same rule: add it to
   `validation/golden/.gitignore`, record its hash in `UC_DERIVED.sha256`, and make its test skip.
+- `msgf-fdr` and `msgf-db/src/decoy.rs` reproduce MS-GF+ behaviour specified from reading its Java
+  (§3.3). They are candidates for the same spec-and-reimplement process as the scorer.
+- `validation/reference/java/*.java` are golden dumpers that *call* the MS-GF+ jar (and, for some,
+  its internal classes) to produce test oracles. They are validation tooling, not part of any
+  build or release.
 - Only the HCD/HighRes/tryptic identity has a permissive model. CID, ETD, QExactive and non-tryptic
   runs still need a `--param`, and MS-GF+'s models are the only ones available for them today.

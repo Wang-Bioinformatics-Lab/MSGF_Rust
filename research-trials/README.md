@@ -1,5 +1,10 @@
 # Research Trials
 
+> **Historical (2026-09-30).** These reports describe experiments on the scorer and generating
+> function that were replaced by a clean-room implementation (`LICENSING.md` §3). Code and file
+> references below point to code that no longer exists. Do not recover it from git history:
+> re-derive any idea from `docs/cleanroom/SPEC.md`.
+
 This directory holds detailed, reproducible reports for algorithm and performance experiments.
 Reports should distinguish measured results from proposals, identify the branch or PR containing the
 prototype, document fidelity tradeoffs, and include validation and reproduction commands.

@@ -10,8 +10,8 @@
 //!
 //! Because the whole PSM list is known up front, the driver runs in two passes per spectrum: the
 //! RawScore of every PSM sharing a `(scan, charge)` is computed first (it needs only the
-//! [`ScoredSpectrum`]), and the **minimum** of those RawScores becomes the pruning threshold for
-//! the one generating function they share ([`compute_tail_into`]). The tail is bit-identical to
+//! [`PreparedSpectrum`]), and the **minimum** of those RawScores becomes the pruning threshold for
+//! the one generating function they share ([`score_distribution`]). The tail is bit-identical to
 //! the full DP at and above that threshold, and no PSM in the group is ever queried below it.
 
 use std::collections::HashMap;
@@ -19,13 +19,12 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use msgf_chem::{mass, scaling};
-use msgf_genfunc::graph::{build_reverse_graph, standard_aa_nominal, Aa, PeptideCleavage};
-use msgf_genfunc::{compute, compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc};
+use msgf_genfunc::{score_distribution, NullModel};
 use msgf_io::MgfReader;
-use msgf_scorer::preprocess::preprocess;
-use msgf_scorer::scored_spectrum::ScoredSpectrum;
-use msgf_scorer::ScoringModel;
+use msgf_scorer::{
+    match_and_terminal_score, prepare_with_cache, Candidate, Cleavage, Ms2, PreparedSpectrum,
+    Residue, ScoreModel, RESIDUE_ORDER,
+};
 
 pub const USAGE: &str = "\
 msgf rescore — recompute MS-GF+ scores for a PSM list
@@ -149,7 +148,7 @@ impl Config {
 struct RawSpectrum {
     charge: Option<i32>,
     precursor_mz: f64,
-    peaks: Vec<(f32, f32)>,
+    peaks: Vec<(f64, f64)>,
 }
 
 /// One PSM to rescore.
@@ -157,13 +156,6 @@ struct Psm {
     scan: String,
     peptide: String,
     charge: Option<i32>,
-}
-
-/// The candidate-independent half of a `(scan, charge)`: the scored spectrum (all a RawScore
-/// needs) plus the isotope-error sink masses the generating function will be built over.
-struct PreparedSpec<'m> {
-    scored: ScoredSpectrum<'m>,
-    sinks: Vec<i32>,
 }
 
 /// Why an input PSM produced no row. Recorded per PSM and replayed in input order so the driver's
@@ -193,7 +185,7 @@ pub fn run(cfg: &Config) -> Result<(), String> {
     crate::model::announce(&model_source, &model);
     let spectra = index_spectra(&cfg.spectra)?;
     let psms = read_psms(&cfg.psms)?;
-    let (aa, prob_cleavage) = build_alphabet(cfg.aa_probs.as_deref(), cfg.ox_m)?;
+    let null = build_null(cfg.aa_probs.as_deref(), cfg.ox_m, cfg.ti)?;
 
     // Open the output *before* scoring. Grouping by `(scan, charge)` means rows can only be emitted
     // once every group is done, but an unwritable `--out` must still fail in the first second rather
@@ -205,15 +197,7 @@ pub fn run(cfg: &Config) -> Result<(), String> {
         None => Box::new(BufWriter::new(io::stdout())),
     };
 
-    let outcomes = score_all(
-        &model,
-        &spectra,
-        &psms,
-        &aa,
-        prob_cleavage,
-        cfg.ti,
-        /* pruned = */ true,
-    );
+    let outcomes = score_all(&model, &spectra, &psms, &null, /* pruned = */ true);
 
     let mut header = String::from("scan\tpeptide\tcharge\traw_score\tdenovo_score\tspec_evalue");
     if cfg.db_size.is_some() {
@@ -240,6 +224,9 @@ pub fn run(cfg: &Config) -> Result<(), String> {
                 denovo,
                 spec,
             } => {
+                // An exact-zero SpecEValue (RawScore above the support) prints as `-0.000000e0`,
+                // the established output of this tool; keep it.
+                let spec = if spec == 0.0 { -0.0 } else { spec };
                 write!(
                     writer,
                     "{}\t{}\t{}\t{}\t{}\t{:.6e}",
@@ -264,25 +251,23 @@ pub fn run(cfg: &Config) -> Result<(), String> {
 /// The PSM list is read whole, so the input order is only an *output* constraint: the driver walks
 /// spectra instead, which is what makes tail pruning available. For each `(scan, charge)` group it
 ///
-/// 1. builds the [`ScoredSpectrum`] once and takes the RawScore of every PSM in the group, then
+/// 1. builds the [`PreparedSpectrum`] once and takes the RawScore of every PSM in the group, then
 /// 2. builds the group's single generating function pruned to the **minimum** of those RawScores —
 ///    the lowest score any of them will ever query — and reads each PSM's tail off it.
 ///
 /// Grouping (rather than two passes over the whole list) is what keeps the memory profile honest:
-/// exactly one `ScoredSpectrum` and one `GenFunc` are live at a time, where the previous
+/// exactly one prepared spectrum and one distribution are live at a time, where the previous
 /// PSM-ordered driver kept one of each for **every** distinct `(scan, charge)` alive in a cache
 /// until the run ended. What it costs is one `Vec<usize>` of PSM indices per group plus a 24-byte
 /// [`Outcome`] per PSM, held so rows can be emitted in input order.
 ///
-/// `pruned = false` runs the unpruned [`compute`] instead — the pre-pruning path, kept callable so
+/// `pruned = false` builds the unpruned distribution instead — kept callable so
 /// `pruned_matches_unpruned_bitwise` can assert the two agree to the last bit.
 fn score_all(
-    model: &ScoringModel,
+    model: &ScoreModel,
     spectra: &HashMap<String, RawSpectrum>,
     psms: &[Psm],
-    aa: &[Aa],
-    prob_cleavage: f64,
-    ti: (i32, i32),
+    null: &NullModel,
     pruned: bool,
 ) -> Vec<Outcome> {
     // Resolve spectrum + charge per PSM (in input order, so the skip reasons match), and bucket the
@@ -317,16 +302,10 @@ fn score_all(
         }
     }
 
-    let cleave = Cleavage {
-        credit: 2,
-        penalty: -11,
-        prob_cleavage_sites: prob_cleavage,
-    };
-    let mut scratch = DpScratch::default();
     let mut raws: Vec<i32> = Vec::new();
     for &((scan, charge), ref idxs) in &keyed {
         let raw_spectrum = &spectra[scan];
-        let Some(prep) = prepare_spec(model, raw_spectrum, charge, ti) else {
+        let Some(prep) = prepare_spec(model, raw_spectrum, charge, null.isotope) else {
             continue; // outcomes already carry Skip::NoGenFunc
         };
 
@@ -335,7 +314,7 @@ fn score_all(
         raws.clear();
         let mut threshold = i32::MAX;
         for &i in idxs {
-            match raw_score_of(&prep.scored, &psms[i].peptide) {
+            match raw_score_of(&prep, &null.cleavage, &psms[i].peptide) {
                 Some(r) => {
                     threshold = threshold.min(r);
                     raws.push(r);
@@ -348,11 +327,10 @@ fn score_all(
         // A group with no scorable PSM leaves `threshold` at `i32::MAX`; the DP clamps the cut to
         // the DeNovoScore, so that is simply the cheapest exact run, and it is still needed to
         // decide whether these PSMs skip as "unparseable" or as "no generating function".
-        let Some(gf) = build_gf(&prep, aa, cleave, &mut scratch, pruned.then_some(threshold))
-        else {
+        let Some(tail) = score_distribution(&prep, null, pruned.then_some(threshold)) else {
             continue;
         };
-        let denovo = gf.max_score();
+        let denovo = tail.best_possible();
         for (&i, &raw) in idxs.iter().zip(&raws) {
             outcomes[i] = if raw == i32::MIN {
                 Outcome::Skip(Skip::BadPeptide)
@@ -361,7 +339,7 @@ fn score_all(
                     charge,
                     raw,
                     denovo,
-                    spec: gf.spectral_probability(raw),
+                    spec: tail.tail_mass(raw),
                 }
             };
         }
@@ -369,83 +347,40 @@ fn score_all(
     outcomes
 }
 
-/// MS-GF+ RawScore = node+edge match score (`DBScanScorer.getScore`) + terminal cleavage.
-/// `scored.raw_score` is the node+edge part; the peptide/neighboring cleavage the graph scores at
-/// the termini is added so the SpecEValue tail is looked up at the same score MS-GF+ reports.
-/// `None` if the peptide does not parse.
-fn raw_score_of(scored: &ScoredSpectrum, peptide: &str) -> Option<i32> {
-    let residues = msgf_chem::peptide::parse(peptide)?;
-    let nominal = msgf_chem::peptide::nominal_prefix_masses(&residues);
-    let accurate = msgf_chem::peptide::accurate_prefix_masses(&residues);
-    let num_mods = msgf_chem::peptide::num_mods(&residues) as i32;
-    Some(scored.raw_score(&nominal, &accurate, num_mods) + cleavage_score(peptide, &residues))
+/// RawScore = the node + edge match score plus the enzymatic-terminus terms, so the SpecEValue tail
+/// is looked up at the score the generating function also uses. `None` if the peptide does not
+/// parse.
+fn raw_score_of(prep: &PreparedSpectrum, cleavage: &Cleavage, peptide: &str) -> Option<i32> {
+    let parsed = msgf_chem::peptide::parse(peptide)?;
+    let residues: Vec<Residue> = parsed
+        .iter()
+        .map(|r| Residue {
+            letter: r.aa,
+            delta: r.mod_delta,
+        })
+        .collect();
+    let cand = Candidate {
+        residues: &residues,
+        n_term_credit: n_term_credit(peptide),
+    };
+    match_and_terminal_score(prep, &cand, cleavage)
 }
 
-/// Build the scored spectrum and isotope-error sink set for one `(scan, charge)`. `None` if the
-/// precursor is implausible or the sink range is empty.
+/// Prepare one `(scan, charge)`: `None` if the precursor is implausible (nominal peptide mass
+/// outside 50..=10000) or the model has no partition for it.
 fn prepare_spec<'m>(
-    model: &'m ScoringModel,
+    model: &'m ScoreModel,
     raw: &RawSpectrum,
     charge: i32,
     ti: (i32, i32),
-) -> Option<PreparedSpec<'m>> {
-    // Neutral precursor mass, then the candidate peptide's nominal mass (precursor − water).
-    let parent_mass = raw.precursor_mz as f32 * charge as f32 - charge as f32 * mass::PROTON as f32;
-    let pep_nominal = scaling::nominal_bin(parent_mass - mass::WATER as f32);
-    if !(50..=10_000).contains(&pep_nominal) {
-        return None;
-    }
-    // Isotope-error sink range (MS-GF+ -ti LO,HI): an isotope error of +k means the measured mass
-    // is ~k Da high, so the true peptide mass is k bins lower.
-    let sinks: Vec<i32> = (pep_nominal - ti.1..=pep_nominal - ti.0)
-        .filter(|&p| p > 0)
-        .collect();
-    if sinks.is_empty() {
-        return None;
-    }
-
-    let peaks = preprocess(model, charge, parent_mass, &raw.peaks);
-    let scored = ScoredSpectrum::from_ranked_peaks(model, charge, parent_mass, peaks);
-    Some(PreparedSpec { scored, sinks })
-}
-
-/// Build the merged generating function for one prepared spectrum. With `threshold = Some(t)` the
-/// DP discards every score cell that provably cannot reach `t`; the resulting tail is bit-identical
-/// to the unpruned one for every score `>= t`, and `max_score()` (DeNovoScore) is exact regardless.
-/// `None` means the sinks are unreachable — the same condition the unpruned path returns `None` on,
-/// because the cut is clamped to the DeNovoScore and so never empties a reachable graph.
-fn build_gf(
-    prep: &PreparedSpec,
-    aa: &[Aa],
-    cleave: Cleavage,
-    scratch: &mut DpScratch,
-    threshold: Option<i32>,
-) -> Option<GenFunc> {
-    // GeneratingFunctionGroup: one graph per candidate peptide mass (isotope range), then merged.
-    // Tables and edges are candidate-independent, so build them once for the largest candidate and
-    // only recompute node scores per candidate.
-    let max_p = *prep.sinks.iter().max().unwrap(); // sinks is non-empty (prepare_spec checked)
-    let tables = prep.scored.tables(max_p);
-    let (mut graph, _) = build_reverse_graph(
-        &prep.scored,
-        &tables,
-        max_p,
-        &[max_p],
-        aa,
-        PeptideCleavage::TRYPSIN,
-    );
-    let mut gfs: Vec<GenFunc> = Vec::new();
-    for &p in &prep.sinks {
-        graph.recompute_node_scores(&tables, p, &[p]);
-        let gf = match threshold {
-            Some(t) => compute_tail_into(scratch, &graph, &[p as usize], Some(cleave), t),
-            None => compute(&graph, &[p as usize], Some(cleave)),
-        };
-        if let Some(gf) = gf {
-            gfs.push(gf);
-        }
-    }
-    merge_group(&gfs)
+) -> Option<PreparedSpectrum<'m>> {
+    let ms2 = Ms2 {
+        peaks: &raw.peaks,
+        precursor_mz: raw.precursor_mz,
+        charge,
+    };
+    // Node tables are cached up to the highest isotope sink (N0 - LO); others are computed on use.
+    prepare_with_cache(model, &ms2, (-ti.0).max(2))
 }
 
 // ---- input parsing ---------------------------------------------------------------------------
@@ -464,11 +399,7 @@ fn index_spectra(path: &Path) -> Result<HashMap<String, RawSpectrum>, String> {
             RawSpectrum {
                 charge: s.charge,
                 precursor_mz: mz,
-                peaks: s
-                    .peaks
-                    .iter()
-                    .map(|p| (p.mz as f32, p.intensity as f32))
-                    .collect(),
+                peaks: s.peaks.iter().map(|p| (p.mz, p.intensity)).collect(),
             },
         );
     }
@@ -547,36 +478,22 @@ fn read_psms(path: &Path) -> Result<Vec<Psm>, String> {
     Ok(out)
 }
 
-/// Build the graph amino-acid alphabet and the K+R cleavage probability from a residue→probability
-/// map (uniform 0.05 by default). With `--ox-m`, appends oxidized methionine (+15.994915).
-fn build_alphabet(aa_probs: Option<&Path>, ox_m: bool) -> Result<(Vec<Aa>, f64), String> {
+/// Build the null model: the 20 standard residues with their background probabilities (uniform
+/// 0.05 by default, or `--aa-probs`), oxidised methionine (+15.994915) appended with `--ox-m`,
+/// trypsin terminus scoring (mixture weight = w_K + w_R) and the isotope-error range.
+fn build_null(aa_probs: Option<&Path>, ox_m: bool, ti: (i32, i32)) -> Result<NullModel, String> {
     let probs: HashMap<u8, f64> = match aa_probs {
         Some(p) => load_aa_probs(p)?,
-        None => standard_aa_nominal()
-            .iter()
-            .map(|(r, _)| (*r, 0.05))
-            .collect(),
+        None => RESIDUE_ORDER.iter().map(|&r| (r, 0.05)).collect(),
     };
     let prob_of = |r: u8| probs.get(&r).copied().unwrap_or(0.05);
-    let mut aa: Vec<Aa> = standard_aa_nominal()
-        .into_iter()
-        .map(|(residue, nominal)| Aa {
-            residue,
-            nominal,
-            accurate_mass: msgf_chem::residue_mass(residue).expect("standard residue") as f32,
-            prob: prob_of(residue),
-        })
-        .collect();
-    if ox_m {
-        let m_ox = msgf_chem::residue_mass(b'M').unwrap() + 15.994915;
-        aa.push(Aa {
-            residue: b'M',
-            nominal: scaling::nominal_bin(m_ox as f32),
-            accurate_mass: m_ox as f32,
-            prob: prob_of(b'M'),
-        });
-    }
-    Ok((aa, prob_of(b'K') + prob_of(b'R')))
+    let extra: &[(u8, f64)] = if ox_m { &[(b'M', 15.994915)] } else { &[] };
+    Ok(NullModel::from_probs(
+        prob_of,
+        extra,
+        Cleavage::trypsin(),
+        ti,
+    ))
 }
 
 /// Load a residue→probability TSV (`R<TAB>0.0567`), one residue per line, `#` comments allowed.
@@ -609,37 +526,18 @@ fn load_aa_probs(path: &Path) -> Result<HashMap<u8, f64>, String> {
     Ok(out)
 }
 
-/// Terminal cleavage contribution to the MS-GF+ RawScore (trypsin), using the same credit/penalty
-/// (+2 / −11) the generating function applies at the peptide/neighboring termini.
-///
-/// - **C-terminal (peptide) cleavage:** credit if the last residue is K or R; otherwise penalty.
-///   Sitting at the protein C-terminus does *not* earn credit.
-/// - **N-terminal (neighboring) cleavage:** credit if the flanking N residue is K/R or a protein
-///   terminus (`-`); otherwise penalty. A **bare** peptide (no `X.…​.Y` context) is assumed fully
-///   tryptic (credit) — supply flanking context to score semi-tryptic termini correctly.
-fn cleavage_score(pep: &str, residues: &[msgf_chem::peptide::Residue]) -> i32 {
-    const CREDIT: i32 = 2;
-    const PENALTY: i32 = -11;
+/// N-terminal (neighbouring) cleavage credit for trypsin, from the peptide string's context:
+/// credit if the flanking N residue is K/R or a protein terminus (`-`); a **bare** peptide (no
+/// `X.….Y` context) is assumed fully tryptic. The C-terminal term (credit iff the last residue is
+/// K or R; ending the protein does not substitute) is applied by the scorer.
+fn n_term_credit(pep: &str) -> bool {
     let b = pep.as_bytes();
     let has_ctx = b.len() >= 4 && b[1] == b'.' && b[b.len() - 2] == b'.';
-    let (flank_n, flank_c) = if has_ctx {
-        (Some(b[0]), Some(b[b.len() - 1]))
+    if has_ctx {
+        matches!(b[0], b'K' | b'R' | b'-')
     } else {
-        (None, None)
-    };
-    let is_kr = |c: u8| c == b'K' || c == b'R';
-
-    let nterm = match flank_n {
-        Some(c) if is_kr(c) || c == b'-' => CREDIT,
-        Some(_) => PENALTY,
-        None => CREDIT, // bare peptide: assume tryptic N-terminus
-    };
-    // Ending the protein does not substitute for a cleavage residue at the C-terminus (verified
-    // against MS-GF+ on F13), so `flank_c` only matters for peptides that are not protein-terminal.
-    let _ = flank_c;
-    let last = residues.last().map(|r| r.aa).unwrap_or(0);
-    let cterm = if is_kr(last) { CREDIT } else { PENALTY };
-    nterm + cterm
+        true
+    }
 }
 
 pub fn io_err(e: io::Error) -> String {
@@ -671,7 +569,7 @@ mod tests {
         }
         let (model, _) = crate::model::load(Some(param.as_path())).expect("model");
         let spectra = index_spectra(&mgf).expect("spectra");
-        let (aa, prob_cleavage) = build_alphabet(None, true).expect("alphabet");
+        let null = build_null(None, true, (0, 1)).expect("null model");
 
         // MS-GF+'s own F13 output: ScanNum, Charge, Peptide. Several PSMs share a scan, which is
         // the case the group minimum exists for. Two deliberately broken rows exercise the skip
@@ -703,8 +601,8 @@ mod tests {
             charge: Some(2),
         });
 
-        let pruned = score_all(&model, &spectra, &psms, &aa, prob_cleavage, (0, 1), true);
-        let full = score_all(&model, &spectra, &psms, &aa, prob_cleavage, (0, 1), false);
+        let pruned = score_all(&model, &spectra, &psms, &null, true);
+        let full = score_all(&model, &spectra, &psms, &null, false);
 
         assert_eq!(pruned.len(), psms.len());
         assert_eq!(full.len(), psms.len());

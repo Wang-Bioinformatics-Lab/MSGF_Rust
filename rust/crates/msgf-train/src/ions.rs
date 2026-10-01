@@ -48,7 +48,7 @@ fn neutral_losses() -> Vec<(&'static str, f64)> {
     ]
 }
 
-/// Java `Math.round` on the offset, as `read_param` does when deriving the ion name.
+/// `floor(offset + 0.5)`, as `read_param` does when deriving the ion name (`docs/param-format.md`).
 fn round_name(x: f32) -> i64 {
     (x + 0.5).floor() as i64
 }

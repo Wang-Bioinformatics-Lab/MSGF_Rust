@@ -1,39 +1,21 @@
-//! Encoder for the MS-GF+ `.param` scoring-model format — the inverse of [`crate::read_param`].
+//! Encoder for the `.param` scoring-model format — the inverse of [`crate::read_param`].
 //!
-//! # Why this exists
-//!
-//! [`crate::read_param`] can only *consume* the trained `.param` models shipped with MS-GF+, which
-//! are Copyright UC Regents under a non-commercial license (see `validation/README.md`,
-//! `docs/models.md`). To ship a permissively-licensed MSGF_Rust we must be able to **produce** a
-//! model of our own — trained from openly-licensed data (e.g. MassIVE-KB, CC0). This module is the
-//! first half of that: it serialises any in-memory [`ScoringModel`] back into the on-disk byte
-//! format, so a future `msgf-train` crate can emit a real `.param` that the existing reader,
-//! scorer, and generating function accept unchanged.
-//!
-//! # Licensing boundary
-//!
-//! This encoder is **clean-room**: it is written from the format documented in `docs/param-format.md`
-//! and the structure of [`crate::read_param`] in this repo — *not* transcribed from MS-GF+'s Java
-//! `NewRankScorer.writeParameters`. The `.param` *file format* is an interface (uncopyrightable);
-//! the encumbered artifacts are the trained *numbers* in UC's shipped `.param` files, which live
-//! only under `validation/data/` (gitignored, fetched, test-only) and are never vendored here. A
-//! [`ScoringModel`] we construct ourselves and write with this module carries no upstream license.
+//! It serialises any in-memory [`ScoringModel`] into the on-disk byte format documented in
+//! `docs/param-format.md`, which is how `msgf-train` emits the models this project ships. The
+//! `.param` *file format* is an interface; a model we count ourselves carries no upstream licence.
 //!
 //! # Fidelity
 //!
-//! `read_param(write_param(m)) == m` for every model produced by [`crate::read_param`] — the
-//! round-trip is validated against all four high-res UC models in `tests/roundtrip_write.rs`. The
-//! encoding mirrors Java `DataOutputStream`: big-endian scalars, `writeByte(len)` + UTF-16BE chars
-//! for strings, per-partition parallel arrays in the reader's sorted order, and the trailing
-//! `0x7FFFFFFF` (`Integer.MAX_VALUE`) sentinel.
+//! `read_param(write_param(m)) == m` for every model the reader produces. The encoding is
+//! big-endian scalars, a length byte + UTF-16BE code units for strings, per-partition parallel
+//! sections in the sorted partition order, and the trailing `0x7FFFFFFF` sentinel.
 
 use crate::ScoringModel;
 use msgf_chem::Unit;
 use std::io;
 use std::path::Path;
 
-/// Big-endian sink mirroring Java `DataOutputStream` (the write-side of [`crate::read_param`]'s
-/// `Reader`).
+/// Big-endian sink (the write side of [`crate::read_param`]).
 struct Writer {
     b: Vec<u8>,
 }
@@ -54,7 +36,7 @@ impl Writer {
     fn f32(&mut self, v: f32) {
         self.b.extend_from_slice(&v.to_be_bytes());
     }
-    /// Java `writeByte(len)` + `writeChars` (len UTF-16BE code units). Inverse of `Reader::jstring`.
+    /// Length byte + UTF-16BE code units (the format's string encoding).
     fn jstring(&mut self, s: &str) {
         let units: Vec<u16> = s.encode_utf16().collect();
         self.u8(units.len() as u8);
@@ -99,7 +81,7 @@ pub fn write_param(m: &ScoringModel) -> Vec<u8> {
         w.i32(count);
     }
 
-    // partitions (already in the reader's TreeSet order: charge, seg, parent_mass)
+    // partitions (already in the reader's sorted order: charge, seg, parent_mass)
     w.i32(m.partitions.len() as i32);
     w.i32(m.num_segments);
     for p in &m.partitions {

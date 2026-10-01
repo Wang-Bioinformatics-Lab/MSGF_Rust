@@ -3,6 +3,12 @@
 Design and execution plans. `PLAN.md` is the authoritative strategy document; the numbered plans are
 self-contained execution plans for one workstream each and carry their own status line.
 
+**Clean-room rule (2026-09-30):** where an older plan says to read, port or mine MS-GF+'s Java, that
+is withdrawn. The scorer and generating function are now a clean-room implementation
+(`docs/cleanroom/`), and agents must not read MS-GF+ source or the replaced files in git history.
+See `LICENSING.md` §3. PLAN3's measurements and code references describe the *previous* DP
+implementation, which no longer exists.
+
 | Doc | Workstream | Status |
 |---|---|---|
 | [PLAN.md](PLAN.md) | Authoritative design doc: phases, decisions D1–D5, algorithm derivation | living |

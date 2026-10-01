@@ -62,7 +62,7 @@ For a trainer, "producing a model" = filling these and serialising §1–§8:
   is observed. *(Fragment offset frequencies.)*
 - **§6 ion rows + noise row** — the load-bearing scores. The per-node score is
   `ln( ionFreq[rank] / (noiseFreq[rank] · min(ionCharge, num_segments)) )`
-  (`ScoringModel::score_from_table`); the `max_rank` column is the "ion absent" bin. *(Rank
+  (`ScoringModel::node_score`); the `max_rank` column is the "ion absent" bin (`ScoringModel::missing_ion_score`). *(Rank
   distributions.)*
 - **§7 signal/noise/ion_existence** — high-res mass-error term used by edge scoring.
 - **§4** — precursor offset frequencies (used in preprocessing/filtering).

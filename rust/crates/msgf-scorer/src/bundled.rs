@@ -1,7 +1,7 @@
 //! The scoring model MSGF_Rust ships — and the reason it can ship one at all.
 //!
 //! MS-GF+'s own `.param` models are Copyright UC Regents under a non-commercial/academic license,
-//! so they are never vendored here (they are fetched on demand for validation only). The model
+//! so they are never vendored here. The model
 //! embedded by this module is a different artifact entirely: it was **counted by `msgf-train` from
 //! MassIVE-KB**, a CC0 corpus of FDR-controlled peptide-spectrum matches. No UC bytes went into
 //! it, so it — and this repository — can be MIT.
@@ -14,7 +14,7 @@
 //! It is the default when no model is given on the command line. Other identities (CID, ETD,
 //! QExactive, non-tryptic) are not trained yet — pass `--param` for those.
 
-use crate::{read_param, ParamError, ScoringModel};
+use crate::{read_param, ModelError, ParamError, ScoreModel, ScoringModel};
 
 /// The embedded `.param` bytes.
 pub const PARAM: &[u8] = include_bytes!("../models/MSGFRust_HCD_HighRes_Tryp_v1.param");
@@ -29,12 +29,17 @@ pub const PROVENANCE: &str =
 /// SHA-256 of [`PARAM`], pinned so a swapped model is a test failure rather than a surprise.
 pub const SHA256: &str = "5f6ab76f5f849609f9901379536b4db98d93f355c5b428de108e3ad41e432d02";
 
-/// Decode the bundled model.
+/// Decode the bundled model as a `.param` record (all sections, field for field).
 ///
-/// Cheap enough to call once per run (a ~1 MB parse), but it is a fresh `ScoringModel` each time —
-/// hold on to it rather than calling per spectrum.
+/// Cheap enough to call once per run (a ~1 MB parse), but it is a fresh model each time — hold
+/// on to it rather than calling per spectrum.
 pub fn model() -> Result<ScoringModel, ParamError> {
     read_param(PARAM)
+}
+
+/// Decode the bundled model for scoring ([`crate::prepare`] and friends).
+pub fn score_model() -> Result<ScoreModel, ModelError> {
+    ScoreModel::from_bytes(PARAM)
 }
 
 #[cfg(test)]
@@ -56,6 +61,15 @@ mod tests {
         assert_eq!(m.error_dist.len(), m.partitions.len());
         assert_eq!(m.rank_dist.len(), m.partitions.len());
         assert!(m.frag_off.iter().all(|b| !b.is_empty()));
+    }
+
+    #[test]
+    fn bundled_model_decodes_for_scoring() {
+        let s = score_model().expect("bundled model decodes for scoring");
+        let m = model().unwrap();
+        assert_eq!(s.partitions.len(), m.partitions.len());
+        assert_eq!(s.max_rank, m.max_rank);
+        assert_eq!(s.error_scale, m.error_scaling_factor);
     }
 
     #[test]

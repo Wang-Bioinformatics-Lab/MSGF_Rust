@@ -18,16 +18,15 @@
 //!   internally, so E-values are the same order of magnitude but not directly comparable.
 //!   **Q-values are computed from SpecEValue**, so this scaling does not affect FDR at all.
 
-use msgf_chem::peptide::Residue;
-use msgf_chem::{mass, scaling, Tolerance};
+use msgf_chem::Tolerance;
 use msgf_db::enzyme::DigestParams;
 use msgf_db::fasta::ProteinDb;
-use msgf_genfunc::graph::{build_reverse_graph_into, Aa, PeptideCleavage};
-use msgf_genfunc::{compute_tail_into, merge_group, Cleavage, DpScratch, GenFunc, Graph};
+use msgf_genfunc::{score_distribution, AlphabetEntry, NullModel};
 use msgf_io::Spectrum;
-use msgf_scorer::preprocess::preprocess;
-use msgf_scorer::scored_spectrum::ScoredSpectrum;
-use msgf_scorer::ScoringModel;
+use msgf_scorer::{
+    match_and_terminal_score, prepare_with_cache, Candidate as ScoredCandidate, Cleavage, Ms2,
+    PreparedSpectrum, Residue, ScoreModel, RESIDUE_ORDER,
+};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -37,8 +36,8 @@ use crate::mods::{ModPosition, ModSet};
 /// Mass difference between the ¹³C and ¹²C isotopes — one isotope-error step on the precursor.
 pub const ISOTOPE_STEP: f64 = 1.003_354_838;
 
-/// Cleavage credit and penalty applied at an enzymatic / non-enzymatic terminus. These are the
-/// values validated bit-exact against MS-GF+ for trypsin (see `msgf-cli`'s golden rescore test).
+/// Cleavage credit and penalty applied at an enzymatic / non-enzymatic terminus (the MS-GF+
+/// convention for trypsin).
 pub const CLEAVAGE_CREDIT: i32 = 2;
 pub const CLEAVAGE_PENALTY: i32 = -11;
 
@@ -111,38 +110,32 @@ enum CleavageMode {
 
 /// Everything a search needs, assembled once and shared across spectra.
 pub struct SearchEngine<'a> {
-    model: &'a ScoringModel,
+    model: &'a ScoreModel,
     db: &'a ProteinDb,
     index: &'a PeptideIndex,
     mods: &'a ModSet,
     params: SearchParams,
-    /// Graph alphabet: the 20 residues (with fixed mods folded in) plus one entry per variable-mod
-    /// variant, each weighted by its database frequency.
-    alphabet: Vec<Aa>,
+    /// The generating function's null model: the 20 residues (with fixed mods folded in) plus one
+    /// entry per variable-mod variant, each weighted by its database frequency; the enzyme's
+    /// terminus rule; the isotope-error range.
+    null: NullModel,
     /// Residues the enzyme cleaves at, for terminal cleavage scoring.
     cleave_at: Vec<u8>,
-    cleavage_mode: CleavageMode,
-    /// Summed database frequency of the cleavage residues — `probCleavageSites` in MS-GF+.
-    prob_cleavage_sites: f64,
     warnings: Vec<String>,
 }
 
-/// Per-thread reusable buffers for one spectrum's generating function: the DP arena and the CSR
-/// de novo graph. Both are ~0.5 MB on the high-res grid and identical in shape from spectrum to
-/// spectrum, so one instance per rayon worker keeps the whole search allocation-free on this path.
+/// Per-thread reusable buffers for scoring one spectrum's candidates.
 #[derive(Default)]
 pub struct SearchScratch {
-    /// Arena backing every intermediate node distribution (see [`DpScratch`]).
-    pub dp: DpScratch,
-    /// CSR graph buffers, overwritten in full by each `build_reverse_graph_into`.
-    pub graph: Graph,
+    peaks: Vec<(f64, f64)>,
+    buf: ScoreBuffers,
 }
 
 impl<'a> SearchEngine<'a> {
     /// Assemble an engine. The amino-acid background frequencies are taken from `db`, which is what
     /// makes the SpecEValue reflect the composition of the database actually being searched.
     pub fn new(
-        model: &'a ScoringModel,
+        model: &'a ScoreModel,
         db: &'a ProteinDb,
         index: &'a PeptideIndex,
         mods: &'a ModSet,
@@ -154,23 +147,19 @@ impl<'a> SearchEngine<'a> {
         let prob_of = |r: u8| probs.get(&r).copied().unwrap_or(0.0);
 
         // Base alphabet: each standard residue at its fixed-modified mass.
-        let mut alphabet: Vec<Aa> = msgf_genfunc::graph::standard_aa_nominal()
-            .into_iter()
-            .map(|(residue, _)| {
-                let m = msgf_chem::residue_mass(residue).expect("standard residue")
-                    + mods.fixed_residue_delta(residue);
-                Aa {
-                    residue,
-                    nominal: scaling::nominal_bin(m as f32),
-                    accurate_mass: m as f32,
-                    prob: prob_of(residue),
-                }
+        let mut alphabet: Vec<AlphabetEntry> = RESIDUE_ORDER
+            .iter()
+            .map(|&residue| AlphabetEntry {
+                letter: residue,
+                mass: msgf_chem::residue_mass(residue).expect("standard residue")
+                    + mods.fixed_residue_delta(residue),
+                prob: prob_of(residue),
             })
             .collect();
 
         // One extra edge per variable-mod variant, at the same background frequency as the
         // unmodified residue — the convention `msgf-cli`'s `--ox-m` was validated with.
-        let base_residues: Vec<u8> = alphabet.iter().map(|a| a.residue).collect();
+        let base_residues: Vec<u8> = alphabet.iter().map(|a| a.letter).collect();
         for (_, spec) in mods.variable() {
             if spec.position != ModPosition::Any {
                 warnings.push(format!(
@@ -193,10 +182,9 @@ impl<'a> SearchEngine<'a> {
                 if m <= 0.0 {
                     continue;
                 }
-                alphabet.push(Aa {
-                    residue: r,
-                    nominal: scaling::nominal_bin(m as f32),
-                    accurate_mass: m as f32,
+                alphabet.push(AlphabetEntry {
+                    letter: r,
+                    mass: m,
                     prob: prob_of(r),
                 });
             }
@@ -217,7 +205,20 @@ impl<'a> SearchEngine<'a> {
             CleavageMode::Off
         };
         let cleave_at = enzyme.cleave_at.clone();
-        let prob_cleavage_sites = cleave_at.iter().map(|&r| prob_of(r)).sum();
+        // The terminus rule of both the RawScore and the null distribution. The neighbouring
+        // residue's cleavage is not known a priori, so the null weights it by the summed database
+        // frequency of the cleavage residues.
+        let cleavage = Cleavage {
+            sites: cleave_at.clone(),
+            credit: CLEAVAGE_CREDIT,
+            penalty: CLEAVAGE_PENALTY,
+            enabled: cleavage_mode == CleavageMode::CTerminal,
+        };
+        let null = NullModel {
+            alphabet,
+            cleavage,
+            isotope: params.isotope_errors,
+        };
 
         SearchEngine {
             model,
@@ -225,10 +226,8 @@ impl<'a> SearchEngine<'a> {
             index,
             mods,
             params,
-            alphabet,
+            null,
             cleave_at,
-            cleavage_mode,
-            prob_cleavage_sites,
             warnings,
         }
     }
@@ -302,21 +301,22 @@ impl<'a> SearchEngine<'a> {
         charge: i32,
     ) -> Vec<Psm> {
         // Neutral precursor mass (= candidate peptide mass, water included).
-        let parent_mass = mz as f32 * charge as f32 - charge as f32 * mass::PROTON as f32;
-        let pep_nominal = scaling::nominal_bin(parent_mass - mass::WATER as f32);
-        if !(50..=10_000).contains(&pep_nominal) {
-            return Vec::new();
-        }
+        let parent_mass = mz as f32 * charge as f32 - charge as f32 * msgf_scorer::PROTON as f32;
         let (ti_lo, ti_hi) = self.params.isotope_errors;
 
-        // --- the per-spectrum half: preprocess and score the peaks ---
-        let peaks: Vec<(f32, f32)> = spec
+        // --- the per-spectrum half: prepare the peaks (None = implausible precursor mass) ---
+        scratch.peaks.clear();
+        scratch
             .peaks
-            .iter()
-            .map(|p| (p.mz as f32, p.intensity as f32))
-            .collect();
-        let ranked = preprocess(self.model, charge, parent_mass, &peaks);
-        let scored = ScoredSpectrum::from_ranked_peaks(self.model, charge, parent_mass, ranked);
+            .extend(spec.peaks.iter().map(|p| (p.mz, p.intensity)));
+        let ms2 = Ms2 {
+            peaks: &scratch.peaks,
+            precursor_mz: mz,
+            charge,
+        };
+        let Some(prep) = prepare_with_cache(self.model, &ms2, (-ti_lo).max(2)) else {
+            return Vec::new();
+        };
 
         // --- the per-candidate half: every peptide in the precursor window gets a RawScore ---
         // Identical peptides occurring in several proteins score identically, so they are grouped
@@ -325,9 +325,9 @@ impl<'a> SearchEngine<'a> {
         //
         // This runs *before* the generating function, which needs nothing from it but gains a great
         // deal: the RawScore of the worst PSM we will report is the tail threshold, and the DP can
-        // then skip every score cell that provably cannot reach it (see `compute_tail_into`).
+        // then skip every score cell that provably cannot reach it.
         let mut grouped: HashMap<String, Hit> = HashMap::new();
-        let mut buf = ScoreBuffers::default();
+        let buf = &mut scratch.buf;
         for k in ti_lo..=ti_hi {
             let target = parent_mass as f64 - k as f64 * ISOTOPE_STEP;
             let win = self.params.precursor_tol.window_da(target);
@@ -336,7 +336,7 @@ impl<'a> SearchEngine<'a> {
                 match grouped.get_mut(&key) {
                     Some(hit) => hit.proteins.push(cand.protein),
                     None => {
-                        let raw_score = self.raw_score(&scored, cand, &mut buf);
+                        let raw_score = self.raw_score(&prep, cand, buf);
                         grouped.insert(
                             key,
                             Hit {
@@ -361,62 +361,24 @@ impl<'a> SearchEngine<'a> {
         // Every reported PSM is looked up at or above this score, so nothing below it is needed.
         let threshold = hits.iter().map(|h| h.1.raw_score).min().unwrap_or(i32::MIN);
 
-        // --- the generating function: built once, tail-pruned to the reported PSMs' scores ---
-        // An isotope error of +k means the measured precursor is ~k Da high, so the true peptide
-        // mass is k nominal bins lower.
-        let sinks: Vec<i32> = (pep_nominal - ti_hi..=pep_nominal - ti_lo)
-            .filter(|&p| p > 0)
-            .collect();
-        let Some(&max_p) = sinks.iter().max() else {
+        // --- the generating function: built once over the isotope-error sinks, tail-pruned to the
+        // reported PSMs' scores. An isotope error of +k means the measured precursor is ~k Da high,
+        // so the true peptide mass is k nominal bins lower.
+        let Some(tail) = score_distribution(&prep, &self.null, Some(threshold)) else {
             return Vec::new();
         };
-        let tables = scored.tables(max_p);
-        let peptide_cleavage = match self.cleavage_mode {
-            CleavageMode::CTerminal => PeptideCleavage {
-                cleave_at: &self.cleave_at,
-                credit: CLEAVAGE_CREDIT,
-                penalty: CLEAVAGE_PENALTY,
-            },
-            CleavageMode::Off => PeptideCleavage::NONE,
-        };
-        let graph = &mut scratch.graph;
-        build_reverse_graph_into(
-            graph,
-            &scored,
-            &tables,
-            max_p,
-            &[max_p],
-            &self.alphabet,
-            peptide_cleavage,
-        );
-        // The *neighbouring* residue's cleavage is probabilistic (we do not know it a priori), so
-        // it weights the final distribution rather than an edge.
-        let cleavage = match self.cleavage_mode {
-            CleavageMode::CTerminal => Some(Cleavage {
-                credit: CLEAVAGE_CREDIT,
-                penalty: CLEAVAGE_PENALTY,
-                prob_cleavage_sites: self.prob_cleavage_sites,
-            }),
-            CleavageMode::Off => None,
-        };
-        let mut gfs: Vec<GenFunc> = Vec::with_capacity(sinks.len());
-        for &p in &sinks {
-            graph.recompute_node_scores(&tables, p, &[p]);
-            if let Some(gf) =
-                compute_tail_into(&mut scratch.dp, graph, &[p as usize], cleavage, threshold)
-            {
-                gfs.push(gf);
-            }
-        }
-        let Some(gf) = merge_group(&gfs) else {
-            return Vec::new();
-        };
-        let denovo = gf.max_score();
+        let denovo = tail.best_possible();
+        let _ = ti_hi;
 
         let db_size = self.db_size();
         hits.into_iter()
             .map(|(peptide_key, hit)| {
-                let spec_evalue = gf.spectral_probability(hit.raw_score);
+                // An exact-zero SpecEValue (RawScore above the support) is carried as -0.0, the
+                // established output of this tool (`-0.000000e0`).
+                let spec_evalue = match tail.tail_mass(hit.raw_score) {
+                    v if v == 0.0 => -0.0,
+                    v => v,
+                };
                 let cand = &hit.candidate;
                 let observed = parent_mass as f64 - hit.isotope_error as f64 * ISOTOPE_STEP;
                 let proteins: Vec<String> = hit
@@ -454,38 +416,31 @@ impl<'a> SearchEngine<'a> {
             .collect()
     }
 
-    /// MS-GF+ RawScore for one candidate: the node+edge match score (`DBScanScorer.getScore`) plus
-    /// the terminal cleavage credit/penalty `DBScanner` adds on top.
-    fn raw_score(&self, scored: &ScoredSpectrum, cand: &Candidate, buf: &mut ScoreBuffers) -> i32 {
+    /// RawScore for one candidate: the node + edge match score plus the terminal cleavage
+    /// credit/penalty at both termini.
+    fn raw_score(&self, prep: &PreparedSpectrum, cand: &Candidate, buf: &mut ScoreBuffers) -> i32 {
         buf.fill(cand, self.db, self.mods);
-        scored.raw_score(&buf.nominal, &buf.accurate, buf.n_mods) + self.terminal_cleavage(cand)
+        let scored = ScoredCandidate {
+            residues: &buf.residues,
+            n_term_credit: self.n_term_credit(cand),
+        };
+        match_and_terminal_score(prep, &scored, &self.null.cleavage)
+            .expect("candidates hold standard residues")
     }
 
-    /// Cleavage contribution at the two termini, using the candidate's real protein context.
+    /// Whether the candidate's N-terminus counts as enzymatic, from its real protein context.
     ///
-    /// - **C-terminal (peptide) cleavage:** credit only when the last residue is an enzyme cleavage
-    ///   residue. Ending the protein does **not** substitute — verified against MS-GF+ on the F13
-    ///   corpus, where protein-C-terminal peptides ending in a non-K/R residue (`R.PILVPL.-`,
-    ///   `R.GCAFTM+15.995.-`) take the penalty.
-    /// - **N-terminal (neighbouring) cleavage:** credit when the preceding residue is a cleavage
-    ///   residue, when the peptide starts the protein (there is no preceding residue to fail the
-    ///   test), or when it starts just after an excised initiator methionine — all verified
-    ///   against F13.
-    fn terminal_cleavage(&self, cand: &Candidate) -> i32 {
-        if self.cleavage_mode == CleavageMode::Off {
-            return 0;
-        }
+    /// Credit when the preceding residue is a cleavage residue, when the peptide starts the
+    /// protein (there is no preceding residue to fail the test), or when it starts just after an
+    /// excised initiator methionine. The C-terminal term (credit only when the last residue is a
+    /// cleavage residue; ending the protein does **not** substitute) is applied by the scorer.
+    /// Irrelevant when cleavage scoring is off.
+    fn n_term_credit(&self, cand: &Candidate) -> bool {
         let protein = &self.db.proteins[cand.protein as usize];
-        let (start, len) = (cand.start as usize, cand.len as usize);
+        let start = cand.start as usize;
         let at_prot_n = start == protein.start;
         let after_initiator_met = start == protein.start + 1 && self.db.seq[protein.start] == b'M';
-        let credit_if = |b: bool| if b { CLEAVAGE_CREDIT } else { CLEAVAGE_PENALTY };
-
-        let n_term = credit_if(
-            at_prot_n || after_initiator_met || self.cleave_at.contains(&self.db.seq[start - 1]),
-        );
-        let c_term = credit_if(self.cleave_at.contains(&self.db.seq[start + len - 1]));
-        n_term + c_term
+        at_prot_n || after_initiator_met || self.cleave_at.contains(&self.db.seq[start - 1])
     }
 
     /// Format a candidate as a peptide string: `K.SAM+15.995PLER.A` (with flanking protein context)
@@ -534,20 +489,14 @@ struct Hit {
     proteins: Vec<u32>,
 }
 
-/// Reusable per-candidate buffers, so scoring millions of candidates does no repeated allocation.
+/// Reusable per-candidate buffer, so scoring millions of candidates does no repeated allocation.
 #[derive(Default)]
 struct ScoreBuffers {
     residues: Vec<Residue>,
-    nominal: Vec<i32>,
-    accurate: Vec<f64>,
-    n_mods: i32,
 }
 
 impl ScoreBuffers {
-    /// Materialise the candidate's residues (with all mod deltas) and its cumulative nominal and
-    /// accurate prefix masses. The arithmetic mirrors `msgf_chem::peptide::{nominal_prefix_masses,
-    /// accurate_prefix_masses}` operation-for-operation, so scores stay bit-identical to the
-    /// allocating path those functions provide.
+    /// Materialise the candidate's residues with every fixed and variable modification delta.
     fn fill(&mut self, cand: &Candidate, db: &ProteinDb, mods: &ModSet) {
         let protein = &db.proteins[cand.protein as usize];
         let (start, len) = (cand.start as usize, cand.len as usize);
@@ -556,26 +505,10 @@ impl ScoreBuffers {
         let at_prot_c = start + len == protein.start + protein.len;
 
         self.residues.clear();
-        self.nominal.clear();
-        self.accurate.clear();
-        self.n_mods = 0;
-
-        let (mut cum_nominal, mut cum_accurate) = (0i32, 0.0f64);
         for (i, &r) in seq.iter().enumerate() {
             let delta = mods.fixed_delta(r, i, len, at_prot_n, at_prot_c)
                 + cand.placement.delta_at(i, mods);
-            if delta != 0.0 {
-                self.n_mods += 1;
-            }
-            let m = msgf_chem::residue_mass(r).expect("candidates hold standard residues") + delta;
-            cum_nominal += scaling::nominal_bin(m as f32);
-            cum_accurate += m;
-            self.residues.push(Residue {
-                aa: r,
-                mod_delta: delta,
-            });
-            self.nominal.push(cum_nominal);
-            self.accurate.push(cum_accurate);
+            self.residues.push(Residue { letter: r, delta });
         }
     }
 }
@@ -592,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn score_buffers_match_the_allocating_helpers() {
+    fn score_buffers_match_the_string_parser() {
         let db = ProteinDb {
             seq: b"SAMPLERK".to_vec(),
             proteins: vec![Protein {
@@ -626,19 +559,22 @@ mod tests {
         let mut buf = ScoreBuffers::default();
         buf.fill(&cand, &db, &mods);
 
-        // The same peptide via the string parser + the allocating prefix-mass helpers.
+        // The same peptide via the string parser.
         let delta = mods.mods[0].mass;
         let pep = format!("SAM{delta:+}PLERK");
         let residues = msgf_chem::peptide::parse(&pep).unwrap();
+        let via_parser: Vec<Residue> = residues
+            .iter()
+            .map(|r| Residue {
+                letter: r.aa,
+                delta: r.mod_delta,
+            })
+            .collect();
+        assert_eq!(buf.residues, via_parser);
         assert_eq!(
-            buf.nominal,
+            msgf_scorer::cumulative_nominal(&buf.residues).unwrap(),
             msgf_chem::peptide::nominal_prefix_masses(&residues)
         );
-        assert_eq!(
-            buf.accurate,
-            msgf_chem::peptide::accurate_prefix_masses(&residues)
-        );
-        assert_eq!(buf.n_mods, msgf_chem::peptide::num_mods(&residues) as i32);
         assert_eq!(buf.residues.len(), 8);
     }
 }

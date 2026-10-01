@@ -5,9 +5,10 @@
 //! quantiles of our own corpus** (target ≈ `min_psms_per_partition` PSMs per bin), not values
 //! copied from any existing model — a partition scheme is a property of the training set.
 //!
-//! [`PartitionScheme::index_of`] reproduces the lookup `msgf-scorer`'s `ScoredSpectrum` performs
-//! at scoring time (`TreeSet` floor over `(charge, seg, parent_mass)`, with the charge fallback),
-//! so a PSM is counted into exactly the partition that will later score it.
+//! [`PartitionScheme::index_of`] reproduces the partition lookup `msgf-scorer` performs at scoring
+//! time (floor over `(charge, seg, parent_mass)`, with the charge fallback;
+//! `docs/cleanroom/SPEC.md` §4.1), so a PSM is counted into exactly the partition that will later
+//! score it.
 
 use crate::corpus::TrainingPsm;
 use msgf_scorer::Partition;
@@ -105,7 +106,7 @@ impl PartitionScheme {
         scheme
     }
 
-    /// `TreeSet.floor` over `(charge, seg, parent_mass)`.
+    /// The last partition `<= (charge, seg, parent_mass)` in lexicographic order (a sorted-set floor).
     fn floor(&self, charge: i32, seg: i32, mass: f32) -> Option<usize> {
         let mut best = None;
         for (i, p) in self.partitions.iter().enumerate() {
@@ -116,7 +117,7 @@ impl PartitionScheme {
         best
     }
 
-    /// The partition serving `(charge, parent_mass, seg)` — mirrors `ScoredSpectrum::partition_for`.
+    /// The partition serving `(charge, parent_mass, seg)` — the scorer's rule, `SPEC.md` §4.1.
     pub fn index_of(&self, charge: i32, parent_mass: f32, seg: i32) -> Option<usize> {
         match self.floor(charge, seg, parent_mass) {
             None => {
@@ -134,7 +135,7 @@ impl PartitionScheme {
         }
     }
 
-    /// `NewScoredSpectrum.getSegmentNum` — which mass segment a theoretical m/z falls in.
+    /// Which mass segment a theoretical m/z falls in (`SPEC.md` §5).
     #[inline]
     pub fn segment_num(&self, mz: f32, parent_mass: f32) -> i32 {
         let s = (mz / parent_mass * self.num_segments as f32) as i32;

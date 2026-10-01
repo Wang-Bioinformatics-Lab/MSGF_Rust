@@ -7,7 +7,7 @@
 //! **Clean-room boundary.** Nothing here is transcribed from MS-GF+'s
 //! `ScoringParameterGeneratorWithErrors`. The container is the documented format
 //! (`docs/param-format.md`); the *statistics* are defined in [`counts`] from the semantics the
-//! scorer gives each table (`ScoringModel::score_from_table` consumes `ln(ion/noise)`, so the
+//! scorer gives each table (`ScoringModel::node_score` consumes `ln(ion/noise)`, so the
 //! trainer produces exactly that ratio's numerator and denominator). Constants like the mass
 //! tolerance, segment count and rank ceiling are configuration of the identity being trained
 //! ([`TrainConfig`]), not trained values.

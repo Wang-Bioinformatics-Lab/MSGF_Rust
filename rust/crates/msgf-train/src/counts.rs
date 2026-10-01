@@ -20,7 +20,7 @@
 //! **Normalisation.** Rank rows are per *spectrum*, not per site: `row[r]` is the average number
 //! of sites per spectrum whose matched peak had rank `r`, so a row sums to the average number of
 //! scored sites per spectrum and the ratio `ion[r] / noise[r]` in
-//! `ScoringModel::score_from_table` is a like-for-like likelihood ratio. Every bin is floored by
+//! `ScoringModel::node_score` is a like-for-like likelihood ratio. Every bin is floored by
 //! add-λ smoothing, which keeps `ln(ion/noise)` finite and makes never-observed ranks score ~0.
 
 use crate::corpus::TrainingPsm;
@@ -29,12 +29,13 @@ use crate::partition::PartitionScheme;
 use crate::TrainConfig;
 use msgf_chem::peptide::{self, Residue};
 use msgf_chem::{round_half_up, scaling};
-use msgf_scorer::preprocess::preprocess;
-use msgf_scorer::scored_spectrum::{peak_by_mass, RankedPeak};
-use msgf_scorer::{ErrorDist, FragOff, Partition, PrecursorOff, RankDist, ScoringModel};
+use msgf_scorer::{
+    peak_by_mass, preprocess, ErrorDist, FragOff, Partition, PrecursorOff, PreprocessParams,
+    RankDist, RankedPeak, ScoringModel,
+};
 use rayon::prelude::*;
 
-/// `Composition.ChargeCarrierMass()` as MS-GF+'s preprocessing uses it.
+/// The charge-carrier mass spectrum preparation uses (as f32).
 const CHARGE_CARRIER: f32 = 1.00727649_f64 as f32;
 
 /// Raw counts for one training run, indexed `[partition][candidate][bin]`.
@@ -182,7 +183,7 @@ fn accumulate(
     cfg: &TrainConfig,
     scheme: &PartitionScheme,
     cands: &[Candidate],
-    bootstrap: &ScoringModel,
+    bootstrap: &PreprocessParams,
     acc: &mut Counts,
     s: &mut Scratch,
 ) {
@@ -384,6 +385,7 @@ pub fn sweep(
     cands: &[Candidate],
     bootstrap: &ScoringModel,
 ) -> Counts {
+    let bootstrap = &PreprocessParams::from_param(bootstrap);
     let n_part = scheme.partitions.len();
     let n_cand = cands.len();
     let n_rank = (cfg.max_rank + 1) as usize;
@@ -675,9 +677,9 @@ pub fn build_model(
                 q.charge == part.charge && q.parent_mass == part.parent_mass && q.seg == last_seg
             })
             .unwrap_or(p);
-        // `NewScoredSpectrum.determineIonTypes`: the main ion is the one with the greatest
-        // frequency *summed over the group's segments* — not the top ion of one segment. The
-        // error distribution describes that ion's edges, so it must be chosen the same way.
+        // The scorer's anchor (main) ion type is the one with the greatest frequency *summed over
+        // the group's segments* — not the top ion of one segment (`docs/cleanroom/SPEC.md` §4.5).
+        // The error distribution describes that ion's edges, so it must be chosen the same way.
         let main = {
             let mut best: Option<(usize, f32)> = None;
             for (q, qpart) in scheme.partitions.iter().enumerate() {
