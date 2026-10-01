@@ -243,3 +243,10 @@ These have to be cleaned up later. The MRB boxes lost power during this work.
 3. **SSE2-path regression** (#16): accept a ≤ 11 % slowdown on CPUs without AVX2, or keep the old
    descriptor build on that tier.
 4. **Non-exact modes** (FMA, f32): measured or estimated as not worth offering.
+
+## Decisions (user, 2026-10-01)
+
+- Every exact commit was merged into `main`, including the extra ~0.4 GB of rescore memory from parallel MGF parsing.
+- **`mimalloc` is now the default** for `msgf-cli`. To build without it, use `--no-default-features`. The library crates (`msgf-scorer`, `msgf-genfunc`, …) do not depend on it.
+- The slowdown of up to 11 % on CPUs without AVX2 is accepted, since those CPUs are too old to matter.
+- There is no inexact "fast" mode.
