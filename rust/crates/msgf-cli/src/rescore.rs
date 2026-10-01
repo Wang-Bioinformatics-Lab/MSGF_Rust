@@ -20,7 +20,6 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use msgf_genfunc::{score_distribution, NullModel};
-use msgf_io::MgfReader;
 use msgf_scorer::{
     match_and_terminal_score, prepare_with_cache, Candidate, Cleavage, Ms2, PreparedSpectrum,
     Residue, ScoreModel, RESIDUE_ORDER,
@@ -451,11 +450,13 @@ fn prepare_spec<'m>(
 
 /// Index every MGF spectrum by its `SCANS=` value.
 fn index_spectra(path: &Path) -> Result<HashMap<String, RawSpectrum>, String> {
-    let file = File::open(path).map_err(|e| format!("opening {}: {e}", path.display()))?;
+    // Open first so a missing file reports as before ("opening ..."); then read in parallel.
+    File::open(path).map_err(|e| format!("opening {}: {e}", path.display()))?;
     let mut out = HashMap::new();
-    for s in MgfReader::new(BufReader::new(file)) {
-        let s = s.map_err(|e| format!("reading {}: {e}", path.display()))?;
-        let (Some(scan), Some(mz)) = (s.scan.clone(), s.precursor_mz) else {
+    let spectra =
+        msgf_io::read_mgf_file(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    for s in spectra {
+        let (Some(scan), Some(mz)) = (s.scan, s.precursor_mz) else {
             continue; // need a scan id and a precursor to score
         };
         out.insert(

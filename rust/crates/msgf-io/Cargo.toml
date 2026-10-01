@@ -7,6 +7,7 @@ authors.workspace = true
 description = "Spectrum types and format readers (MGF; mzML later) for MSGF_Rust"
 
 [dependencies]
+rayon = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

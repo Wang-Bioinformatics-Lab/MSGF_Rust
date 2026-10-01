@@ -4,8 +4,7 @@
 //! Parsing is validated byte-for-byte against `validation/golden/spectra/` in
 //! `tests/golden_spectra.rs`, including a canonical peak-list hash.
 
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead};
 use std::path::Path;
 
 /// A single m/z + intensity pair.
@@ -96,33 +95,44 @@ impl<R: BufRead> MgfReader<R> {
                 None => break, // EOF inside a spectrum: emit what we have
                 Some(l) => l,
             };
-            let t = line.trim();
-            if t == "END IONS" {
+            if !apply_body_line(&mut spec, line) {
                 break;
             }
-            if t.is_empty() {
-                continue;
-            }
-            if let Some(v) = t.strip_prefix("TITLE=") {
-                spec.title = Some(v.to_string());
-            } else if let Some(v) = t.strip_prefix("SCANS=") {
-                spec.scan = Some(v.to_string());
-            } else if let Some(v) = t.strip_prefix("PEPMASS=") {
-                spec.precursor_mz = v.split_whitespace().next().and_then(|x| x.parse().ok());
-            } else if let Some(v) = t.strip_prefix("CHARGE=") {
-                spec.charge = v.trim_end_matches(['+', '-']).parse().ok();
-            } else if t.as_bytes()[0].is_ascii_digit() {
-                let mut it = t.split_whitespace();
-                if let Some(mz) = it.next().and_then(|x| x.parse::<f64>().ok()) {
-                    let intensity = it.next().and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
-                    spec.peaks.push(Peak { mz, intensity });
-                }
-            }
-            // any other header (RTINSECONDS=, etc.) is ignored
         }
         self.index += 1;
         Ok(Some(spec))
     }
+}
+
+/// Apply one line (line terminator already removed) inside a `BEGIN IONS` block to `spec`.
+/// Returns `false` at `END IONS`. Shared by the streaming and the parallel reader so both parse
+/// identically.
+#[inline]
+fn apply_body_line(spec: &mut Spectrum, line: &str) -> bool {
+    let t = line.trim();
+    if t == "END IONS" {
+        return false;
+    }
+    if t.is_empty() {
+        return true;
+    }
+    if let Some(v) = t.strip_prefix("TITLE=") {
+        spec.title = Some(v.to_string());
+    } else if let Some(v) = t.strip_prefix("SCANS=") {
+        spec.scan = Some(v.to_string());
+    } else if let Some(v) = t.strip_prefix("PEPMASS=") {
+        spec.precursor_mz = v.split_whitespace().next().and_then(|x| x.parse().ok());
+    } else if let Some(v) = t.strip_prefix("CHARGE=") {
+        spec.charge = v.trim_end_matches(['+', '-']).parse().ok();
+    } else if t.as_bytes()[0].is_ascii_digit() {
+        let mut it = t.split_whitespace();
+        if let Some(mz) = it.next().and_then(|x| x.parse::<f64>().ok()) {
+            let intensity = it.next().and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+            spec.peaks.push(Peak { mz, intensity });
+        }
+    }
+    // any other header (RTINSECONDS=, etc.) is ignored
+    true
 }
 
 impl<R: BufRead> Iterator for MgfReader<R> {
@@ -132,10 +142,88 @@ impl<R: BufRead> Iterator for MgfReader<R> {
     }
 }
 
-/// Read all spectra from an MGF file.
+/// Read all spectra from an MGF file. The file is read whole; spectrum blocks are located by one
+/// sequential pass with the streaming reader's state machine and then parsed in parallel (rayon),
+/// with exactly the streaming reader's line rules, so the result is identical to
+/// `MgfReader::new(BufReader::new(file)).collect()`. A file that is not valid UTF-8 falls back to
+/// the streaming reader (which reports the error the same way it always did).
 pub fn read_mgf_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Spectrum>> {
-    let reader = BufReader::new(File::open(path)?);
-    MgfReader::new(reader).collect()
+    let bytes = std::fs::read(path)?;
+    match std::str::from_utf8(&bytes) {
+        Ok(text) => Ok(parse_mgf_parallel(text)),
+        Err(_) => MgfReader::new(io::Cursor::new(bytes)).collect(),
+    }
+}
+
+/// The lines of `text` as `BufRead::read_line` yields them (split after each `\n`, last line
+/// possibly unterminated), each with its `\r`/`\n` terminator trimmed, plus its start offset.
+fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    let b = text.as_bytes();
+    let mut pos = 0usize;
+    std::iter::from_fn(move || {
+        if pos >= b.len() {
+            return None;
+        }
+        let start = pos;
+        let end = match b[pos..].iter().position(|&c| c == b'\n') {
+            Some(i) => pos + i + 1,
+            None => b.len(),
+        };
+        pos = end;
+        Some((start, text[start..end].trim_end_matches(['\r', '\n'])))
+    })
+}
+
+/// Whether a (terminator-trimmed) line could be a block marker; a line starting with an ASCII
+/// digit (a peak) never trims to `BEGIN IONS` / `END IONS`, which skips the trim for most lines.
+#[inline]
+fn is_marker(line: &str, marker: &str) -> bool {
+    !line.as_bytes().first().is_some_and(|c| c.is_ascii_digit()) && line.trim() == marker
+}
+
+fn parse_mgf_parallel(text: &str) -> Vec<Spectrum> {
+    use rayon::prelude::*;
+    // Body byte ranges, following the streaming reader: outside a block skip to a line that trims
+    // to BEGIN IONS; inside, stop at a line that trims to END IONS or at EOF.
+    let mut blocks: Vec<(usize, usize)> = Vec::new();
+    let mut open: Option<usize> = None;
+    for (start, line) in lines_with_offsets(text) {
+        match open {
+            None => {
+                if is_marker(line, "BEGIN IONS") {
+                    open = Some(
+                        start
+                            + text[start..]
+                                .find('\n')
+                                .map_or(text.len() - start, |i| i + 1),
+                    );
+                }
+            }
+            Some(b0) => {
+                if is_marker(line, "END IONS") {
+                    blocks.push((b0, start));
+                    open = None;
+                }
+            }
+        }
+    }
+    if let Some(b0) = open {
+        blocks.push((b0, text.len()));
+    }
+    blocks
+        .par_iter()
+        .enumerate()
+        .map(|(index, &(b0, b1))| {
+            let mut spec = Spectrum {
+                index,
+                ..Default::default()
+            };
+            for (_, line) in lines_with_offsets(&text[b0.min(b1)..b1]) {
+                apply_body_line(&mut spec, line);
+            }
+            spec
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -194,5 +282,29 @@ END IONS
             s.canonical_peak_string(),
             "105.01811 73.36440\n126.12766 554.44650"
         );
+    }
+
+    /// The parallel whole-file reader must equal the streaming reader on awkward inputs.
+    #[test]
+    fn parallel_reader_matches_streaming_reader() {
+        let cases: &[&str] = &[
+            SAMPLE,
+            "",
+            "no blocks here\n",
+            "junk\r\nBEGIN IONS\r\nTITLE=a\r\nPEPMASS=1.5\r\n10 1\r\nEND IONS\r\njunk\r\n",
+            // missing END IONS: the next BEGIN IONS is just an ignored line inside the block
+            "BEGIN IONS\nSCANS=1\n100 1\nBEGIN IONS\nSCANS=2\n200 2\nEND IONS\n",
+            // EOF inside a block, unterminated last line
+            "BEGIN IONS\nSCANS=3\n300 3",
+            "  BEGIN IONS  \n\n  TITLE=x \n 5 6 \n\t END IONS\nBEGIN IONS\nEND IONS\n",
+            "END IONS\nBEGIN IONS\nCHARGE=2-\n1e2 3\n7\nEND IONS",
+            "BEGIN IONS\nEND IONS\nBEGIN IONS\n",
+        ];
+        for (i, text) in cases.iter().enumerate() {
+            let streamed: Vec<Spectrum> = MgfReader::new(Cursor::new(text.as_bytes()))
+                .collect::<io::Result<_>>()
+                .unwrap();
+            assert_eq!(parse_mgf_parallel(text), streamed, "case {i}");
+        }
     }
 }

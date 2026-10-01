@@ -23,35 +23,50 @@ pub fn write_tsv_unrolled(w: &mut impl Write, spec_file: &str, psms: &[Psm]) -> 
 }
 
 fn write_rows(w: &mut impl Write, spec_file: &str, psms: &[Psm], unroll: bool) -> io::Result<()> {
+    use rayon::prelude::*;
+    use std::fmt::Write as _;
     writeln!(w, "{HEADER}")?;
-    for p in psms {
-        let joined = p.proteins.join(";");
-        let cells: Vec<&str> = if unroll && !p.proteins.is_empty() {
-            p.proteins.iter().map(String::as_str).collect()
-        } else {
-            vec![joined.as_str()]
-        };
-        for protein in cells {
-            writeln!(
-                w,
-                "{spec_file}\tindex={}\t{}\t{}\t{:.5}\t{}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{:.6E}\t{:.6E}\t{}\t{}",
-                p.spec_index,
-                p.scan,
-                fragmentation_method(&p.title),
-                p.precursor_mz,
-                p.isotope_error,
-                p.precursor_error_ppm,
-                p.charge,
-                p.peptide,
-                protein,
-                p.denovo_score,
-                p.raw_score,
-                p.spec_evalue,
-                p.evalue,
-                fmt_q(p.q_value),
-                fmt_q(p.pep_q_value),
-            )?;
-        }
+    // Rows are formatted in parallel, a chunk of PSMs per task, and written in order.
+    const CHUNK: usize = 4096;
+    let chunks: Vec<String> = psms
+        .par_chunks(CHUNK)
+        .map(|chunk| {
+            let mut out = String::with_capacity(chunk.len() * 200);
+            for p in chunk {
+                let joined = p.proteins.join(";");
+                let cells: Vec<&str> = if unroll && !p.proteins.is_empty() {
+                    p.proteins.iter().map(String::as_str).collect()
+                } else {
+                    vec![joined.as_str()]
+                };
+                for protein in cells {
+                    writeln!(
+                        out,
+                        "{spec_file}\tindex={}\t{}\t{}\t{:.5}\t{}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{:.6E}\t{:.6E}\t{}\t{}",
+                        p.spec_index,
+                        p.scan,
+                        fragmentation_method(&p.title),
+                        p.precursor_mz,
+                        p.isotope_error,
+                        p.precursor_error_ppm,
+                        p.charge,
+                        p.peptide,
+                        protein,
+                        p.denovo_score,
+                        p.raw_score,
+                        p.spec_evalue,
+                        p.evalue,
+                        fmt_q(p.q_value),
+                        fmt_q(p.pep_q_value),
+                    )
+                    .expect("formatting into a String cannot fail");
+                }
+            }
+            out
+        })
+        .collect();
+    for c in chunks {
+        w.write_all(c.as_bytes())?;
     }
     Ok(())
 }
