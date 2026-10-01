@@ -177,6 +177,32 @@ and `cargo test --workspace` with `MSGF_CLEANROOM_VECTORS` set passed. The resco
 `search` were also checked on a CPU without AVX2, which runs the baseline (non-dispatched) path.
 Timings are in `PERFORMANCE.md` ("Current numbers").
 
+## Step 5: fixed N-terminal label in the null model (2026-10-01)
+
+A Claude agent (Opus) working for the user added `NullModel::nterm_delta` (and
+`NullModel::with_nterm_delta`) to `msgf-genfunc`, on branch `nterm-mod` (written from `3073604`,
+rebased onto `bb34dd5`, where the sink row is convolved on its own after the chunked pass). It is an
+extension beyond `SPEC.md` (whose §8 alphabet has no position-restricted entries): a fixed
+peptide-N-terminal modification such as a TMT / iTRAQ label. The edges into each isotope sink (the
+N-terminal residue of every null string; the graph runs C- to N-terminal) carry the label: their
+nominal mass is `max(1, nominal(mass + delta))`, the regular edges no longer land on the sink, and
+the edge score into the sink stays 0 as before. Candidates carry the same label on their first
+residue (caller side). `nterm_delta = 0` (the default of every constructor) takes exactly the
+previous code path.
+
+The behaviour was specified by the plain (unblocked) implementation first written in
+DIA_Proteomics_Rust on branch `dda-tmt` (`rust/src/dda/specprob/null.rs` at `26079085`; the same
+clean-room code this crate came from, MIT OR Apache-2.0, same author). That implementation is kept
+as a test-only reference (`msgf-genfunc/src/nterm_reference.rs`), and the unit test
+`nterm_label_matches_reference` checks the fast path against it bit for bit: six labels (TMT,
+TMTpro, iTRAQ-4, acetyl, a negative delta, none), three isotope ranges, unpruned and three pruning
+cuts, charges 2 and 3, uniform / composition-with-mods / no-cleavage null models, every sink's
+detail; it passes on every generating-function path (`MSGF_GF_MAX_ISA` = sse2, avx2, and AVX-512
+on a CPU that has it). Mutations of the forward pass, the backward seed and the sink-row
+convolution make it fail. No MS-GF+ source and
+no pre-`9a7068e` history was read; `msgf-search` keeps `nterm_delta = 0` (its outputs are
+unchanged: `rescore` and `search` byte-identical to `bb34dd5` on the byte-identity harness).
+
 ## What remains of MS-GF+
 
 **No MS-GF+ code remains in this repository.** What remains:

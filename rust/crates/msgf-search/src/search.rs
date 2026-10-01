@@ -266,6 +266,7 @@ impl<'a> SearchEngine<'a> {
             alphabet,
             cleavage,
             isotope: params.isotope_errors,
+            nterm_delta: 0.0,
         };
 
         SearchEngine {

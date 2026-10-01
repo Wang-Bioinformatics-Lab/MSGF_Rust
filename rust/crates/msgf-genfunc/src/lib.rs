@@ -19,6 +19,14 @@
 //! crates use it; re-exported here), then made faster on 2026-10-01 from the same spec and this
 //! code alone (shared edge table, blocked integer passes, register-blocked convolution, AVX2
 //! dispatch; output bit-identical). See `docs/cleanroom/PROVENANCE.md`.
+//!
+//! ## Fixed N-terminal label
+//!
+//! [`NullModel::nterm_delta`] (default 0) puts a fixed peptide-N-terminal modification (a TMT /
+//! iTRAQ label, …) on the edges into each sink, i.e. on the N-terminal residue of every null
+//! string, as candidates carry it on their first residue. 0 is the unlabelled graph exactly. It
+//! extends `SPEC.md` (step 5 of `docs/cleanroom/PROVENANCE.md`); `nterm_reference.rs` holds the
+//! plain implementation the fast path is tested against.
 
 pub use msgf_scorer::Cleavage;
 use msgf_scorer::PreparedSpectrum;
@@ -43,6 +51,10 @@ pub struct NullModel {
     pub cleavage: Cleavage,
     /// Isotope-error range `(lo, hi)`; sinks are `N0 - hi ..= N0 - lo`.
     pub isotope: (i32, i32),
+    /// Fixed peptide-N-terminal modification (Da; 0 = none), e.g. a TMT / iTRAQ label on the free
+    /// amine. The edges into the sink (the N-terminal residue of every null string) carry it, as
+    /// candidates carry it on their first residue. 0 reproduces the unlabelled graph exactly.
+    pub nterm_delta: f64,
 }
 
 impl NullModel {
@@ -94,7 +106,15 @@ impl NullModel {
             alphabet,
             cleavage,
             isotope,
+            nterm_delta: 0.0,
         }
+    }
+
+    /// This null model with a fixed peptide-N-terminal modification of `delta` Da (see
+    /// [`NullModel::nterm_delta`]).
+    pub fn with_nterm_delta(mut self, delta: f64) -> NullModel {
+        self.nterm_delta = delta;
+        self
     }
 
     /// Mixture weight: summed background probability of the cleavage letters (each letter once,
@@ -331,6 +351,24 @@ fn build_impl<K: Kernel>(
         (0, 0)
     };
     let pi = null.mixture_pi();
+    // Edges into the sink (the N-terminal residue) under a fixed N-terminal label: the same labels
+    // in the same order as `edges`, each mass shifted by the label. `None` = no label, the regular
+    // alphabet lands on the sink.
+    let nedges: Option<Vec<Edge>> = (null.nterm_delta != 0.0).then(|| {
+        null.alphabet
+            .iter()
+            .filter(|a| nominal(a.mass) >= 1)
+            .map(|a| {
+                let m = a.mass + null.nterm_delta;
+                Edge {
+                    nom: nominal(m).max(1) as usize,
+                    mass: m as f32,
+                    prob: a.prob,
+                    term: null.cleavage.term(a.letter),
+                }
+            })
+            .collect()
+    });
 
     let n0 = prep.n0();
     let (ilo, ihi) = null.isotope;
@@ -344,7 +382,16 @@ fn build_impl<K: Kernel>(
             continue;
         }
         let cut = min_query.map(|q| q - kmax);
-        let Some(sd) = sink_dp::<K>(prep, &edges, p, pmax as usize + 1, cut, detail, s) else {
+        let Some(sd) = sink_dp::<K>(
+            prep,
+            &edges,
+            nedges.as_deref(),
+            p,
+            pmax as usize + 1,
+            cut,
+            detail,
+            s,
+        ) else {
             continue;
         };
         let (lo, g) = if cl.enabled {
@@ -757,6 +804,8 @@ fn convolve_rows<K: Kernel>(
 }
 
 /// Unmixed distribution D_p of one sink. `cut`: drop cells whose best completion is below it.
+/// `nedges`: the edges into the sink when a fixed N-terminal label shifts them (same labels and
+/// order as `edges`); `None` = the regular alphabet.
 ///
 /// Reachability, the structural support `[lo, hi]` and the best completion `rem` are integer
 /// min/max recurrences, so the order their candidates are combined in does not matter; they are
@@ -765,9 +814,11 @@ fn convolve_rows<K: Kernel>(
 /// into each cell in alphabet order exactly as the recurrence is written, so its f64 sums are
 /// unchanged.
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn sink_dp<K: Kernel>(
     prep: &PreparedSpectrum,
     edges: &[Edge],
+    nedges: Option<&[Edge]>,
     p: i32,
     stride: usize,
     cut: Option<i32>,
@@ -782,7 +833,7 @@ fn sink_dp<K: Kernel>(
         let x = std::mem::replace(&mut s.e[a * stride + pu], 0);
         s.saved.push(x);
     }
-    let out = sink_dp_inner::<K>(prep, edges, p, stride, cut, detail, s);
+    let out = sink_dp_inner::<K>(prep, edges, nedges, p, stride, cut, detail, s);
     for a in 0..na {
         s.e[a * stride + pu] = s.saved[a];
     }
@@ -790,9 +841,11 @@ fn sink_dp<K: Kernel>(
 }
 
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn sink_dp_inner<K: Kernel>(
     prep: &PreparedSpectrum,
     edges: &[Edge],
+    nedges: Option<&[Edge]>,
     p: i32,
     stride: usize,
     cut: Option<i32>,
@@ -838,9 +891,12 @@ fn sink_dp_inner<K: Kernel>(
     reach[0] = -1;
     lo[0] = 0;
     hi[0] = 0;
+    // With an N-terminal label the regular edges stop below the sink; the shifted ones land on it
+    // (after the blocks).
+    let last = if nedges.is_some() { pu - 1 } else { pu };
     let mut b0 = 1usize;
-    while b0 <= pu {
-        let b1 = (b0 + bs).min(pu + 1);
+    while b0 <= last {
+        let b1 = (b0 + bs).min(last + 1);
         let (r_src, r_dst) = reach.split_at_mut(b0);
         let (l_src, l_dst) = lo.split_at_mut(b0);
         let (h_src, h_dst) = hi.split_at_mut(b0);
@@ -872,6 +928,18 @@ fn sink_dp_inner<K: Kernel>(
         }
         b0 = b1;
     }
+    if let Some(ne) = nedges {
+        for (a, ed) in ne.iter().enumerate() {
+            if ed.nom > pu || reach[pu - ed.nom] == 0 {
+                continue;
+            }
+            let mp = pu - ed.nom;
+            let sh = v[pu] + e[a * stride + pu];
+            reach[pu] = -1;
+            lo[pu] = lo[pu].min(lo[mp] + sh);
+            hi[pu] = hi[pu].max(hi[mp] + sh);
+        }
+    }
     if reach[pu] == 0 {
         return None;
     }
@@ -879,6 +947,22 @@ fn sink_dp_inner<K: Kernel>(
     rem.clear();
     rem.resize(pu + 1, i32::MIN);
     rem[pu] = 0;
+    // With an N-terminal label only the shifted edges reach the sink: seed their sources here
+    // (a max, so the order against the blocks below does not matter; unreachable sources are
+    // reset by the blocks' reach mask) and keep the regular edges off the sink.
+    if let Some(ne) = nedges {
+        for (a, ed) in ne.iter().enumerate() {
+            if ed.nom > pu {
+                continue;
+            }
+            let m = pu - ed.nom;
+            let cand = v[pu] + e[a * stride + pu] + rem[pu];
+            if cand > rem[m] {
+                rem[m] = cand;
+            }
+        }
+    }
+    let to_sink = usize::from(nedges.is_none()); // 1: regular edges may land on the sink
     let mut b1 = pu; // blocks [b0, b1), top down
     while b1 > 0 {
         let b0 = b1.saturating_sub(bs);
@@ -889,7 +973,7 @@ fn sink_dp_inner<K: Kernel>(
             if nom > pu {
                 continue;
             }
-            let end = b1.min(pu - nom + 1);
+            let end = b1.min(pu - nom + to_sink);
             if b0 >= end {
                 continue;
             }
@@ -952,9 +1036,39 @@ fn sink_dp_inner<K: Kernel>(
     // reading past a source row's ends is the same as skipping the missing cells.
     let blocked = edges.iter().all(|ed| ed.prob.is_finite() && ed.prob >= 0.0);
     if blocked {
+        // With an N-terminal label the chunked pass stops below the sink, whose row (the only
+        // one the shifted edges land on) is convolved on its own below.
         convolve_rows::<K>(
-            edges, v, e, stride, pu, rows, desc, arena, rs, rl, rlo, cd, clo, chi,
+            edges, v, e, stride, last, rows, desc, arena, rs, rl, rlo, cd, clo, chi,
         );
+        if let Some(ne) = nedges {
+            let (ms, ml, lm) = rows[pu];
+            let ml = ml as usize;
+            if ml > 0 {
+                let (head, tail) = arena.split_at_mut(ms);
+                let (dst, after) = tail.split_at_mut(ml);
+                after[..PAD].fill(0.0);
+                desc.clear();
+                for (a, ed) in ne.iter().enumerate() {
+                    if pu < ed.nom {
+                        continue;
+                    }
+                    let (ps, pl, lp) = rows[pu - ed.nom];
+                    if pl == 0 {
+                        continue;
+                    }
+                    let sh = v[pu] + e[a * stride + pu];
+                    let base = (lp + sh - lm) as isize;
+                    let (ilo, ihi) = (base.max(0), (base + pl as isize).min(ml as isize));
+                    if ilo >= ihi {
+                        continue;
+                    }
+                    desc.push((ps as isize - base, ilo, ihi, ed.prob));
+                }
+                // SAFETY: K's target features are enabled by the dispatching caller.
+                unsafe { K::convolve(head, dst, desc) };
+            }
+        }
     } else {
         for m in 1..=pu {
             let (ms, ml, lm) = rows[m];
@@ -968,7 +1082,11 @@ fn sink_dp_inner<K: Kernel>(
             // Contributing edges in alphabet order: dst index i reads arena[d + i] for i in
             // [ilo, ihi) (the source row's cells), weight w.
             desc.clear();
-            for (a, ed) in edges.iter().enumerate() {
+            let into = match nedges {
+                Some(ne) if m == pu => ne,
+                _ => edges,
+            };
+            for (a, ed) in into.iter().enumerate() {
                 if m < ed.nom {
                     continue;
                 }
@@ -1002,4 +1120,165 @@ fn sink_dp_inner<K: Kernel>(
         best,
         vertex: if detail { v.to_vec() } else { Vec::new() },
     })
+}
+
+#[cfg(test)]
+mod nterm_reference;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use msgf_scorer::{bundled, prepare_with_cache, Ms2, ScoreModel};
+
+    const PROTON: f64 = 1.007276467;
+    const WATER: f64 = 18.0105646863;
+
+    /// Deterministic synthetic spectrum of `seq` with an N-terminal label `label`: b/y ladders
+    /// (1+, plus 2+ for z >= 3), a few isotope peaks and uniform noise (64-bit LCG, `seed`).
+    fn synthetic(seq: &[u8], label: f64, z: i32, seed: u64) -> (Vec<(f64, f64)>, f64) {
+        let mut st = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let mut rnd = move || {
+            st = st
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (st >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let m: Vec<f64> = seq.iter().map(|&l| residue_mass(l).unwrap()).collect();
+        let total: f64 = m.iter().sum::<f64>() + WATER + label;
+        let mut peaks = Vec::new();
+        let mut b = label;
+        for x in &m[..m.len() - 1] {
+            b += x;
+            peaks.push((b + PROTON, 1e4 + 1e6 * rnd()));
+            let y = total - b;
+            peaks.push((y + PROTON, 1e4 + 1e6 * rnd()));
+            peaks.push((y + PROTON + 1.00335, 1e3 + 1e5 * rnd()));
+            if z >= 3 {
+                peaks.push(((y + 2.0 * PROTON) / 2.0, 1e3 + 1e5 * rnd()));
+            }
+        }
+        for _ in 0..60 {
+            peaks.push((100.0 + (total - 100.0) * rnd(), 1e2 + 5e4 * rnd()));
+        }
+        peaks.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        (peaks, (total + z as f64 * PROTON) / z as f64)
+    }
+
+    fn assert_same(a: &NullTail, b: &NullTail, what: &str) {
+        assert_eq!(a.lowest(), b.lowest(), "{what}: lowest");
+        assert_eq!(a.best_possible(), b.best_possible(), "{what}: best");
+        let bits = |t: &NullTail| t.cells().iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(a), bits(b), "{what}: cells");
+        assert_eq!(a.sinks.len(), b.sinks.len(), "{what}: sinks");
+        for (x, y) in a.sinks.iter().zip(&b.sinks) {
+            assert_eq!(
+                (x.sink, x.lowest, x.best_path),
+                (y.sink, y.lowest, y.best_path),
+                "{what}: sink"
+            );
+            assert_eq!(x.vertex_weights, y.vertex_weights, "{what}: vertex weights");
+            let mb = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            assert_eq!(mb(&x.mass), mb(&y.mass), "{what}: sink mass");
+        }
+    }
+
+    /// The fixed N-terminal label of the fast generating function reproduces, bit for bit, the
+    /// plain reference implementation it was specified by (`nterm_reference.rs`), over labels
+    /// (TMT, TMTpro, iTRAQ-4, acetyl, a negative delta, none), isotope ranges, pruning cuts,
+    /// charges, uniform and composition alphabets, with and without a variable modification.
+    #[test]
+    fn nterm_label_matches_reference() {
+        let model: ScoreModel = bundled::score_model().unwrap();
+        let peptides: [&[u8]; 6] = [
+            b"LVNELTEFAK",
+            b"YLYEIARR",
+            b"GDVTAQIALQPALK",
+            b"AGFAGDDAPRAVFPSIVGR",
+            b"HMTEVVR",
+            b"SAMPLER",
+        ];
+        let labels = [
+            229.162932, 304.207146, 144.102063, 42.010565, -17.026549, 0.0,
+        ];
+        let comp = |l: u8| match l {
+            b'L' => 0.0996,
+            b'K' | b'R' => 0.056,
+            b'W' => 0.012,
+            b'C' => 0.023,
+            _ => 0.046,
+        };
+        let nulls = [
+            NullModel::from_probs(|_| 0.05, &[], Cleavage::trypsin(), (0, 1)),
+            NullModel::from_probs_fixed(
+                comp,
+                &[(b'C', 57.021464)],
+                &[(b'M', 15.994915)],
+                Cleavage::trypsin(),
+                (0, 1),
+            ),
+            NullModel::from_probs(|_| 0.05, &[], Cleavage::disabled(), (0, 1)),
+        ];
+        let mut checked = 0;
+        let mut changed = 0;
+        for (pi, pep) in peptides.iter().enumerate() {
+            for &label in &labels {
+                for z in [2, 3] {
+                    let (peaks, mz) = synthetic(pep, label, z, (pi * 31 + z as usize) as u64);
+                    for iso in [(0, 1), (0, 0), (-1, 2)] {
+                        let ms2 = Ms2 {
+                            peaks: &peaks,
+                            precursor_mz: mz,
+                            charge: z,
+                        };
+                        let Some(prep) = prepare_with_cache(&model, &ms2, (-iso.0).max(0)) else {
+                            continue;
+                        };
+                        for base in &nulls {
+                            let mut null = base.clone().with_nterm_delta(label);
+                            null.isotope = iso;
+                            let full = nterm_reference::ref_build(&prep, &null, None, true);
+                            let got = score_distribution_detailed(&prep, &null, None);
+                            let what = format!("{} label {label} z {z} iso {iso:?}", pi);
+                            match (&full, &got) {
+                                (Some(a), Some(b)) => assert_same(a, b, &what),
+                                (None, None) => continue,
+                                _ => panic!("{what}: reachability differs"),
+                            }
+                            let best = full.as_ref().unwrap().best_possible();
+                            for theta in [best - 3, best - 25, best - 80] {
+                                let a = nterm_reference::ref_build(&prep, &null, Some(theta), true)
+                                    .unwrap();
+                                let b =
+                                    score_distribution_detailed(&prep, &null, Some(theta)).unwrap();
+                                assert_same(&a, &b, &format!("{what} theta {theta}"));
+                                let c = score_distribution(&prep, &null, Some(theta)).unwrap();
+                                assert_eq!(
+                                    b.tail_mass(theta).to_bits(),
+                                    c.tail_mass(theta).to_bits()
+                                );
+                            }
+                            if label != 0.0 {
+                                let mut plain = null.clone();
+                                plain.nterm_delta = 0.0;
+                                let p0 = score_distribution(&prep, &plain, None);
+                                if p0.map(|t| t.cells().to_vec())
+                                    != got.as_ref().map(|t| t.cells().to_vec())
+                                {
+                                    changed += 1;
+                                }
+                            }
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 250, "only {checked} cases built");
+        assert!(
+            changed > 100,
+            "the label changed only {changed} distributions"
+        );
+    }
 }
