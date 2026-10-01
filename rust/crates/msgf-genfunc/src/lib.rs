@@ -219,6 +219,16 @@ struct Scratch {
     desc: Vec<(isize, isize, isize, f64)>,
     /// Holds the sink's edge-table column while it is patched to 0.
     saved: Vec<i32>,
+    /// Row layout as structure-of-arrays (start, length, lowest score), for the vectorised
+    /// descriptor pass.
+    rs: Vec<i64>,
+    rl: Vec<i32>,
+    rlo: Vec<i32>,
+    /// Descriptors of one chunk of target rows, label-major (`a * CHUNK + i`): source offset and
+    /// target range; an empty range (0, 0) marks an edge that contributes nothing.
+    cd: Vec<i64>,
+    clo: Vec<i32>,
+    chi: Vec<i32>,
     arena: Vec<f64>,
 }
 
@@ -236,12 +246,19 @@ fn build(
         let mut s = s.borrow_mut();
         #[cfg(target_arch = "x86_64")]
         {
+            // MSGF_NO_AVX512 (diagnostic): take the AVX2 path on an AVX-512 machine, to compare paths.
+            if std::is_x86_feature_detected!("avx512f")
+                && std::env::var_os("MSGF_NO_AVX512").is_none()
+            {
+                // SAFETY: the CPU supports AVX-512F (checked above).
+                return unsafe { build_avx512(prep, null, min_query, detail, &mut s) };
+            }
             if std::is_x86_feature_detected!("avx2") {
                 // SAFETY: the CPU supports AVX2 (checked above).
                 return unsafe { build_avx2(prep, null, min_query, detail, &mut s) };
             }
         }
-        build_impl(prep, null, min_query, detail, &mut s)
+        build_impl::<Portable>(prep, null, min_query, detail, &mut s)
     })
 }
 
@@ -257,11 +274,25 @@ unsafe fn build_avx2(
     detail: bool,
     s: &mut Scratch,
 ) -> Option<NullTail> {
-    build_impl(prep, null, min_query, detail, s)
+    build_impl::<kernels::Avx2>(prep, null, min_query, detail, s)
+}
+
+/// [`build_impl`] compiled with AVX-512F (8-wide f64). Same argument as [`build_avx2`]: no FMA,
+/// no contraction, so the IEEE operation sequence per cell is unchanged.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx2")]
+unsafe fn build_avx512(
+    prep: &PreparedSpectrum,
+    null: &NullModel,
+    min_query: Option<i32>,
+    detail: bool,
+    s: &mut Scratch,
+) -> Option<NullTail> {
+    build_impl::<kernels::Avx512>(prep, null, min_query, detail, s)
 }
 
 #[inline(always)]
-fn build_impl(
+fn build_impl<K: Kernel>(
     prep: &PreparedSpectrum,
     null: &NullModel,
     min_query: Option<i32>,
@@ -301,7 +332,7 @@ fn build_impl(
             continue;
         }
         let cut = min_query.map(|q| q - kmax);
-        let Some(sd) = sink_dp(prep, &edges, p, pmax as usize + 1, cut, detail, s) else {
+        let Some(sd) = sink_dp::<K>(prep, &edges, p, pmax as usize + 1, cut, detail, s) else {
             continue;
         };
         let (lo, g) = if cl.enabled {
@@ -410,13 +441,14 @@ fn axpy(dst: &mut [f64], src: &[f64], w: f64) {
 }
 
 /// Cells per register block of the convolution; also the zero pad kept around every arena row.
-const PAD: usize = 16;
+const PAD: usize = 32;
 
 /// One row of the convolution, register-blocked: for each block of PAD target cells the edges are
 /// accumulated in alphabet order into a local block (`acc += w * src`, starting from +0.0) and
 /// stored once. Per cell this is the same sequence of IEEE operations as zeroing the row and
 /// running each edge's `axpy` in turn; lanes outside an edge's source range read pad zeros and
 /// add +0.0 (see the caller's `blocked` condition).
+#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 #[inline(always)]
 fn convolve_blocked(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
     let ml = dst.len() as isize;
@@ -446,6 +478,272 @@ fn convolve_blocked(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize,
     }
 }
 
+/// The register-blocked convolution of one row, per instruction set. Every implementation performs,
+/// per target cell, the same IEEE sequence as [`convolve_blocked`]: `acc = +0.0`, then for each
+/// contributing edge in alphabet order `acc = acc + (w * src)` (a separate multiply and add, never
+/// an FMA), then one store. Only the lane width differs, so all are bit-identical.
+trait Kernel {
+    /// # Safety
+    /// The CPU must support the kernel's target features; `head` must hold every block the
+    /// descriptors address (`d + c .. d + c + PAD`), which the row layout guarantees.
+    unsafe fn convolve(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]);
+}
+
+/// Scalar Rust (the compiler may or may not vectorise it).
+struct Portable;
+impl Kernel for Portable {
+    #[inline(always)]
+    unsafe fn convolve(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            // SSE2 is part of the x86-64 baseline.
+            kernels::sse2(head, dst, desc)
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        convolve_blocked(head, dst, desc)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod kernels {
+    use super::{Kernel, PAD};
+    use std::arch::x86_64::*;
+
+    /// Store a finished block: whole when it fits, else only the cells inside the row.
+    #[inline(always)]
+    unsafe fn store_tail(dst: &mut [f64], c: usize, acc: &[f64; PAD]) {
+        for (o, &x) in dst[c..].iter_mut().zip(acc) {
+            *o = x;
+        }
+    }
+
+    #[inline(always)]
+    fn src_ptr(head: &[f64], d: isize, c: isize) -> *const f64 {
+        let s0 = (d + c) as usize;
+        assert!(s0 + PAD <= head.len());
+        // SAFETY: in bounds (asserted).
+        unsafe { head.as_ptr().add(s0) }
+    }
+
+    /// SSE2 has 16 vector registers, so a PAD block is computed as sub-blocks of 16 cells (8
+    /// accumulators each); every sub-block walks the descriptors in alphabet order, so the per-cell
+    /// sequence is unchanged.
+    #[inline(always)]
+    pub unsafe fn sse2(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
+        const SB: usize = 16;
+        let ml = dst.len() as isize;
+        let mut c = 0isize;
+        while c < ml {
+            let c0 = c as usize;
+            let mut t = [0f64; PAD];
+            for h in 0..PAD / SB {
+                let ch = c + (h * SB) as isize;
+                if ch >= ml {
+                    break;
+                }
+                let mut a = [_mm_setzero_pd(); SB / 2];
+                for &(d, ilo, ihi, w) in desc {
+                    if ch + SB as isize <= ilo || ch >= ihi {
+                        continue;
+                    }
+                    let p = src_ptr(head, d, c).add(h * SB);
+                    let wv = _mm_set1_pd(w);
+                    for (k, ak) in a.iter_mut().enumerate() {
+                        *ak = _mm_add_pd(*ak, _mm_mul_pd(wv, _mm_loadu_pd(p.add(2 * k))));
+                    }
+                }
+                for (k, ak) in a.iter().enumerate() {
+                    _mm_storeu_pd(t.as_mut_ptr().add(h * SB + 2 * k), *ak);
+                }
+            }
+            if c + PAD as isize <= ml {
+                dst[c0..c0 + PAD].copy_from_slice(&t);
+            } else {
+                store_tail(dst, c0, &t);
+            }
+            c += PAD as isize;
+        }
+    }
+
+    pub struct Avx2;
+    impl Kernel for Avx2 {
+        #[inline]
+        #[target_feature(enable = "avx2")]
+        unsafe fn convolve(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
+            let ml = dst.len() as isize;
+            let mut c = 0isize;
+            while c < ml {
+                let mut a = [_mm256_setzero_pd(); PAD / 4];
+                for &(d, ilo, ihi, w) in desc {
+                    if c + PAD as isize <= ilo || c >= ihi {
+                        continue;
+                    }
+                    let p = src_ptr(head, d, c);
+                    let wv = _mm256_set1_pd(w);
+                    for (k, ak) in a.iter_mut().enumerate() {
+                        *ak = _mm256_add_pd(*ak, _mm256_mul_pd(wv, _mm256_loadu_pd(p.add(4 * k))));
+                    }
+                }
+                let c0 = c as usize;
+                if c + PAD as isize <= ml {
+                    let q = dst.as_mut_ptr().add(c0);
+                    for (k, ak) in a.iter().enumerate() {
+                        _mm256_storeu_pd(q.add(4 * k), *ak);
+                    }
+                } else {
+                    let mut t = [0f64; PAD];
+                    for (k, ak) in a.iter().enumerate() {
+                        _mm256_storeu_pd(t.as_mut_ptr().add(4 * k), *ak);
+                    }
+                    store_tail(dst, c0, &t);
+                }
+                c += PAD as isize;
+            }
+        }
+    }
+
+    pub struct Avx512;
+    impl Kernel for Avx512 {
+        #[inline]
+        #[target_feature(enable = "avx512f,avx2")]
+        unsafe fn convolve(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize, f64)]) {
+            let ml = dst.len() as isize;
+            let mut c = 0isize;
+            while c < ml {
+                let mut a = [_mm512_setzero_pd(); PAD / 8];
+                for &(d, ilo, ihi, w) in desc {
+                    if c + PAD as isize <= ilo || c >= ihi {
+                        continue;
+                    }
+                    let p = src_ptr(head, d, c);
+                    let wv = _mm512_set1_pd(w);
+                    for (k, ak) in a.iter_mut().enumerate() {
+                        *ak = _mm512_add_pd(*ak, _mm512_mul_pd(wv, _mm512_loadu_pd(p.add(8 * k))));
+                    }
+                }
+                let c0 = c as usize;
+                if c + PAD as isize <= ml {
+                    let q = dst.as_mut_ptr().add(c0);
+                    for (k, ak) in a.iter().enumerate() {
+                        _mm512_storeu_pd(q.add(8 * k), *ak);
+                    }
+                } else {
+                    let mut t = [0f64; PAD];
+                    for (k, ak) in a.iter().enumerate() {
+                        _mm512_storeu_pd(t.as_mut_ptr().add(8 * k), *ak);
+                    }
+                    store_tail(dst, c0, &t);
+                }
+                c += PAD as isize;
+            }
+        }
+    }
+}
+
+/// Target rows per chunk of the vectorised descriptor pass.
+const CHUNK: usize = 64;
+
+/// The blocked convolution of every row `1..=pu`. Descriptors are computed a chunk of target rows
+/// at a time, label by label over contiguous slices (branch-free integer arithmetic, so it
+/// vectorises), then each row's contributing edges are gathered in alphabet order — the same
+/// `(d, ilo, ihi, w)` list, in the same order, as building it row by row — and convolved.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn convolve_rows<K: Kernel>(
+    edges: &[Edge],
+    v: &[i32],
+    e: &[i32],
+    stride: usize,
+    pu: usize,
+    rows: &[(usize, u32, i32)],
+    desc: &mut Vec<(isize, isize, isize, f64)>,
+    arena: &mut [f64],
+    rs: &mut Vec<i64>,
+    rl: &mut Vec<i32>,
+    rlo: &mut Vec<i32>,
+    cd: &mut Vec<i64>,
+    clo: &mut Vec<i32>,
+    chi: &mut Vec<i32>,
+) {
+    let na = edges.len();
+    rs.clear();
+    rl.clear();
+    rlo.clear();
+    for &(st, len, low) in rows {
+        rs.push(st as i64);
+        rl.push(len as i32);
+        rlo.push(low);
+    }
+    cd.clear();
+    cd.resize(na * CHUNK, 0);
+    clo.clear();
+    clo.resize(na * CHUNK, 0);
+    chi.clear();
+    chi.resize(na * CHUNK, 0);
+    desc.clear();
+    desc.resize(na, (0, 0, 0, 0.0));
+    let mut m0 = 1usize;
+    while m0 <= pu {
+        let m1 = (m0 + CHUNK).min(pu + 1);
+        for (a, ed) in edges.iter().enumerate() {
+            let nom = ed.nom;
+            let o = a * CHUNK;
+            let from = m0.max(nom).min(m1);
+            clo[o..o + (from - m0)].fill(0);
+            chi[o..o + (from - m0)].fill(0);
+            if from == m1 {
+                continue;
+            }
+            let k = m1 - from;
+            let (ss, sl, slo) = (
+                &rs[from - nom..from - nom + k],
+                &rl[from - nom..from - nom + k],
+                &rlo[from - nom..from - nom + k],
+            );
+            let (tl, tlo) = (&rl[from..m1], &rlo[from..m1]);
+            let (vv, ee) = (&v[from..m1], &e[a * stride + from..a * stride + m1]);
+            let off = o + (from - m0);
+            let (dd, dlo, dhi) = (
+                &mut cd[off..off + k],
+                &mut clo[off..off + k],
+                &mut chi[off..off + k],
+            );
+            for j in 0..k {
+                let sh = vv[j].wrapping_add(ee[j]);
+                // Source cell j (score lp + j) lands at target index lp + j + sh - lm.
+                let base = slo[j].wrapping_add(sh).wrapping_sub(tlo[j]);
+                let ilo = base.max(0);
+                let ihi = (base as i64 + sl[j] as i64).min(tl[j] as i64) as i32;
+                let ok = (sl[j] > 0) & (ilo < ihi);
+                dd[j] = ss[j] - base as i64;
+                dlo[j] = if ok { ilo } else { 0 };
+                dhi[j] = if ok { ihi } else { 0 };
+            }
+        }
+        for m in m0..m1 {
+            let (ms, ml, _) = rows[m];
+            let ml = ml as usize;
+            if ml == 0 {
+                continue;
+            }
+            let (head, tail) = arena.split_at_mut(ms);
+            let (dst, after) = tail.split_at_mut(ml);
+            after[..PAD].fill(0.0);
+            let i = m - m0;
+            let mut n = 0usize;
+            for (a, ed) in edges.iter().enumerate() {
+                let x = a * CHUNK + i;
+                let (l, h) = (clo[x], chi[x]);
+                desc[n] = (cd[x] as isize, l as isize, h as isize, ed.prob);
+                n += (l < h) as usize;
+            }
+            // SAFETY: K's target features are enabled by the dispatching caller.
+            unsafe { K::convolve(head, dst, &desc[..n]) };
+        }
+        m0 = m1;
+    }
+}
+
 /// Unmixed distribution D_p of one sink. `cut`: drop cells whose best completion is below it.
 ///
 /// Reachability, the structural support `[lo, hi]` and the best completion `rem` are integer
@@ -455,7 +753,7 @@ fn convolve_blocked(head: &[f64], dst: &mut [f64], desc: &[(isize, isize, isize,
 /// into each cell in alphabet order exactly as the recurrence is written, so its f64 sums are
 /// unchanged.
 #[inline(always)]
-fn sink_dp(
+fn sink_dp<K: Kernel>(
     prep: &PreparedSpectrum,
     edges: &[Edge],
     p: i32,
@@ -472,7 +770,7 @@ fn sink_dp(
         let x = std::mem::replace(&mut s.e[a * stride + pu], 0);
         s.saved.push(x);
     }
-    let out = sink_dp_inner(prep, edges, p, stride, cut, detail, s);
+    let out = sink_dp_inner::<K>(prep, edges, p, stride, cut, detail, s);
     for a in 0..na {
         s.e[a * stride + pu] = s.saved[a];
     }
@@ -480,7 +778,7 @@ fn sink_dp(
 }
 
 #[inline(always)]
-fn sink_dp_inner(
+fn sink_dp_inner<K: Kernel>(
     prep: &PreparedSpectrum,
     edges: &[Edge],
     p: i32,
@@ -500,6 +798,12 @@ fn sink_dp_inner(
         rows,
         desc,
         arena,
+        rs,
+        rl,
+        rlo,
+        cd,
+        clo,
+        chi,
         ..
     } = s;
     let e = &e[..];
@@ -635,39 +939,41 @@ fn sink_dp_inner(
     // w * (+0.0) = +0.0, and adding +0.0 to a sum of non-negative terms changes no bit, so
     // reading past a source row's ends is the same as skipping the missing cells.
     let blocked = edges.iter().all(|ed| ed.prob.is_finite() && ed.prob >= 0.0);
-    for m in 1..=pu {
-        let (ms, ml, lm) = rows[m];
-        let ml = ml as usize;
-        if ml == 0 {
-            continue;
-        }
-        let (head, tail) = arena.split_at_mut(ms);
-        let (dst, after) = tail.split_at_mut(ml);
-        after[..PAD].fill(0.0);
-        // Contributing edges in alphabet order: dst index i reads arena[d + i] for i in
-        // [ilo, ihi) (the source row's cells), weight w.
-        desc.clear();
-        for (a, ed) in edges.iter().enumerate() {
-            if m < ed.nom {
+    if blocked {
+        convolve_rows::<K>(
+            edges, v, e, stride, pu, rows, desc, arena, rs, rl, rlo, cd, clo, chi,
+        );
+    } else {
+        for m in 1..=pu {
+            let (ms, ml, lm) = rows[m];
+            let ml = ml as usize;
+            if ml == 0 {
                 continue;
             }
-            let (ps, pl, lp) = rows[m - ed.nom];
-            let pl = pl as usize;
-            if pl == 0 {
-                continue;
+            let (head, tail) = arena.split_at_mut(ms);
+            let (dst, after) = tail.split_at_mut(ml);
+            after[..PAD].fill(0.0);
+            // Contributing edges in alphabet order: dst index i reads arena[d + i] for i in
+            // [ilo, ihi) (the source row's cells), weight w.
+            desc.clear();
+            for (a, ed) in edges.iter().enumerate() {
+                if m < ed.nom {
+                    continue;
+                }
+                let (ps, pl, lp) = rows[m - ed.nom];
+                let pl = pl as usize;
+                if pl == 0 {
+                    continue;
+                }
+                let sh = v[m] + e[a * stride + m];
+                // Source cell j (score lp + j) lands at target index lp + j + sh - lm.
+                let base = (lp + sh - lm) as isize;
+                let (ilo, ihi) = (base.max(0), (base + pl as isize).min(ml as isize));
+                if ilo >= ihi {
+                    continue;
+                }
+                desc.push((ps as isize - base, ilo, ihi, ed.prob));
             }
-            let sh = v[m] + e[a * stride + m];
-            // Source cell j (score lp + j) lands at target index lp + j + sh - lm.
-            let base = (lp + sh - lm) as isize;
-            let (ilo, ihi) = (base.max(0), (base + pl as isize).min(ml as isize));
-            if ilo >= ihi {
-                continue;
-            }
-            desc.push((ps as isize - base, ilo, ihi, ed.prob));
-        }
-        if blocked {
-            convolve_blocked(head, dst, desc);
-        } else {
             dst.fill(0.0);
             for &(d, ilo, ihi, w) in desc.iter() {
                 let (ilo, ihi) = (ilo as usize, ihi as usize);
