@@ -158,9 +158,9 @@ pub fn prepare_with_cache<'m>(
         alpha: Vec::new(),
     };
     let top = (n0 + above_n0).max(0);
-    prep.pre = (0..=top).map(|k| prep.compute_site(k, true)).collect();
-    prep.suf = (0..=top).map(|k| prep.compute_site(k, false)).collect();
-    prep.alpha = (0..=top).map(|k| prep.compute_alpha(k)).collect();
+    prep.pre = prep.site_table(top, true);
+    prep.suf = prep.site_table(top, false);
+    prep.alpha = prep.alpha_table(top);
     Some(prep)
 }
 
@@ -462,6 +462,88 @@ impl<'m> PreparedSpectrum<'m> {
             i += 1;
         }
         best
+    }
+
+    /// [`lookup`](Self::lookup) for a caller whose queries mostly move forward: `cursor` is the
+    /// previous query's window start and is walked (either way) to this window's start instead of
+    /// binary-searched. Same window, same tie rule, same result.
+    #[inline]
+    fn lookup_walk(&self, x: f32, cursor: &mut usize) -> Option<usize> {
+        let t = self.model.tolerance_at(x);
+        let (lo, hi) = (x - t, x + t);
+        let n = self.mz.len();
+        let mut i = (*cursor).min(n);
+        while i < n && self.mz[i] < lo {
+            i += 1;
+        }
+        while i > 0 && !(self.mz[i - 1] < lo) {
+            i -= 1;
+        }
+        *cursor = i;
+        let mut best: Option<usize> = None;
+        while i < n && self.mz[i] <= hi {
+            if best.map_or(true, |b| self.intensity[i] >= self.intensity[b]) {
+                best = Some(i);
+            }
+            i += 1;
+        }
+        best
+    }
+
+    /// `compute_site(k, prefix)` for every k in `[0, top]`, swept ion by ion: each ion's
+    /// theoretical m/z rises with k, so its peak lookups walk the m/z list once instead of
+    /// binary-searching it per node. Every k still receives its terms in (segment, ion) order
+    /// starting from 0.0, so the f32 sums are those of `compute_site`.
+    fn site_table(&self, top: i32, prefix: bool) -> Vec<f32> {
+        let mut out = vec![0.0f32; top as usize + 1];
+        let model = self.model;
+        let segs = model.segments;
+        let rmax = model.max_rank as u32;
+        for (s, &pi) in self.seg_partition.iter().enumerate() {
+            let part = &model.partitions[pi];
+            for (t, ion) in part.ions.iter().enumerate() {
+                if ion.prefix != prefix {
+                    continue;
+                }
+                let ll = &part.rank_ll[t];
+                let mut cursor = 0usize;
+                for k in 1..=top {
+                    let real = nominal_to_real(k);
+                    let x = real / ion.charge as f32 + ion.offset;
+                    let seg = (((x / self.parent_mass) * segs as f32) as i32).min(segs - 1);
+                    if seg != s as i32 {
+                        continue;
+                    }
+                    let bin = match self.lookup_walk(x, &mut cursor) {
+                        Some(p) => (self.rank[p].min(rmax) - 1) as usize,
+                        None => rmax as usize,
+                    };
+                    out[k as usize] += ll[bin];
+                }
+            }
+        }
+        out
+    }
+
+    /// `compute_alpha(k)` for every k in `[0, top]`, with one forward-walking lookup cursor.
+    fn alpha_table(&self, top: i32) -> Vec<f32> {
+        let mut out = vec![0.0f32; top as usize + 1];
+        let Some(a) = self.anchor else {
+            for v in out.iter_mut().skip(1) {
+                *v = -1.0;
+            }
+            return out;
+        };
+        let cf = a.charge as f32;
+        let mut cursor = 0usize;
+        for k in 1..=top {
+            let x = nominal_to_real(k) / cf + a.offset;
+            out[k as usize] = match self.lookup_walk(x, &mut cursor) {
+                Some(p) => (self.mz[p] - a.offset) * cf,
+                None => -1.0,
+            };
+        }
+        out
     }
 
     /// Site score of nominal node `k` for one polarity (prefix = true).

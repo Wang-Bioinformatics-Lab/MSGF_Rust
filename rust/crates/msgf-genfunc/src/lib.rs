@@ -195,11 +195,74 @@ struct Edge {
     term: i32,
 }
 
+/// Working buffers of [`build`], reused across calls on the same thread so a run allocates them
+/// once rather than once per (spectrum, charge). Contents never carry over between calls: every
+/// buffer is resized and (re)initialised before it is read.
+#[derive(Default)]
+struct Scratch {
+    /// Anchor masses alpha(k), k in [0, pmax].
+    alpha: Vec<f32>,
+    /// Edge scores, label-major: `e[a * stride + m]` = score of the edge into `m` with label `a`
+    /// (valid for `m >= nom_a`), shared by every sink. The sink's own column is patched to 0 while
+    /// that sink runs (the edge into a sink carries no score).
+    e: Vec<i32>,
+    v: Vec<i32>,
+    reach: Vec<i32>,
+    lo: Vec<i32>,
+    hi: Vec<i32>,
+    rem: Vec<i32>,
+    /// Per vertex: (arena start, stored length, lowest stored score).
+    rows: Vec<(usize, usize, i32)>,
+    /// Holds the sink's edge-table column while it is patched to 0.
+    saved: Vec<i32>,
+    arena: Vec<f64>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::default());
+}
+
 fn build(
     prep: &PreparedSpectrum,
     null: &NullModel,
     min_query: Option<i32>,
     detail: bool,
+) -> Option<NullTail> {
+    SCRATCH.with(|s| {
+        let mut s = s.borrow_mut();
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx2") {
+                // SAFETY: the CPU supports AVX2 (checked above).
+                return unsafe { build_avx2(prep, null, min_query, detail, &mut s) };
+            }
+        }
+        build_impl(prep, null, min_query, detail, &mut s)
+    })
+}
+
+/// [`build_impl`] compiled with AVX2 enabled (wider packed adds/multiplies, an inlined `floor`).
+/// No FMA is enabled and Rust never contracts `a * b + c`, so every float result is the same
+/// IEEE operation sequence as the baseline build: the output is bit-identical.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn build_avx2(
+    prep: &PreparedSpectrum,
+    null: &NullModel,
+    min_query: Option<i32>,
+    detail: bool,
+    s: &mut Scratch,
+) -> Option<NullTail> {
+    build_impl(prep, null, min_query, detail, s)
+}
+
+#[inline(always)]
+fn build_impl(
+    prep: &PreparedSpectrum,
+    null: &NullModel,
+    min_query: Option<i32>,
+    detail: bool,
+    s: &mut Scratch,
 ) -> Option<NullTail> {
     let edges: Vec<Edge> = null
         .alphabet
@@ -224,21 +287,25 @@ fn build(
 
     let n0 = prep.n0();
     let (ilo, ihi) = null.isotope;
+    let pmax = n0 - ilo;
+    if pmax >= 1 {
+        fill_edge_table(prep, &edges, pmax as usize, s);
+    }
     let mut per_sink: Vec<(i32, i32, Vec<f64>, i32, Vec<i32>)> = Vec::new(); // sink, G lowest, G, best, v
     for p in (n0 - ihi)..=(n0 - ilo) {
         if p <= 0 {
             continue;
         }
         let cut = min_query.map(|q| q - kmax);
-        let Some(sd) = sink_dp(prep, &edges, p, cut) else {
+        let Some(sd) = sink_dp(prep, &edges, p, pmax as usize + 1, cut, detail, s) else {
             continue;
         };
         let (lo, g) = if cl.enabled {
             let glo = sd.low + kmin;
             let ghi = sd.best + kmax;
             let mut g = vec![0f64; (ghi - glo + 1) as usize];
-            let dget = |s: i32| -> f64 {
-                let i = s - sd.low;
+            let dget = |sc: i32| -> f64 {
+                let i = sc - sd.low;
                 if i < 0 || i as usize >= sd.cells.len() {
                     0.0
                 } else {
@@ -246,20 +313,14 @@ fn build(
                 }
             };
             for (i, c) in g.iter_mut().enumerate() {
-                let s = glo + i as i32;
-                *c = pi * dget(s - cl.credit) + (1.0 - pi) * dget(s - cl.penalty);
+                let sc = glo + i as i32;
+                *c = pi * dget(sc - cl.credit) + (1.0 - pi) * dget(sc - cl.penalty);
             }
             (glo, g)
         } else {
             (sd.low, sd.cells)
         };
-        per_sink.push((
-            p,
-            lo,
-            g,
-            sd.best,
-            if detail { sd.vertex } else { Vec::new() },
-        ));
+        per_sink.push((p, lo, g, sd.best, sd.vertex));
     }
     if per_sink.is_empty() {
         return None;
@@ -303,6 +364,29 @@ fn build(
     })
 }
 
+/// Anchor masses up to `pmax` and the shared edge-score table: the score of the edge into vertex
+/// `m` with label `a` depends only on `m`, `m - nom_a` and the label, never on the sink, so it is
+/// computed once for the largest sink and read by every sink.
+#[inline(always)]
+fn fill_edge_table(prep: &PreparedSpectrum, edges: &[Edge], pmax: usize, s: &mut Scratch) {
+    let stride = pmax + 1;
+    s.alpha.clear();
+    s.alpha.extend((0..=pmax as i32).map(|k| prep.alpha(k)));
+    s.e.clear();
+    s.e.resize(edges.len() * stride, 0);
+    let alpha = &s.alpha[..];
+    for (a, ed) in edges.iter().enumerate() {
+        if ed.nom > pmax {
+            continue;
+        }
+        let row = &mut s.e[a * stride..(a + 1) * stride];
+        for m in ed.nom..=pmax {
+            row[m] = prep.edge_between(alpha[m], alpha[m - ed.nom], ed.mass);
+        }
+        row[ed.nom] += ed.term; // the edge leaving the source (m - nom = 0)
+    }
+}
+
 struct SinkDist {
     low: i32,
     cells: Vec<f64>,
@@ -310,127 +394,232 @@ struct SinkDist {
     vertex: Vec<i32>,
 }
 
+/// `dst[i] += w * src[i]` over the common length: one IEEE multiply and one add per cell, in
+/// order, exactly as written (never contracted to an FMA).
+#[inline(always)]
+fn axpy(dst: &mut [f64], src: &[f64], w: f64) {
+    let n = dst.len().min(src.len());
+    let (dst, src) = (&mut dst[..n], &src[..n]);
+    for i in 0..n {
+        dst[i] += w * src[i];
+    }
+}
+
 /// Unmixed distribution D_p of one sink. `cut`: drop cells whose best completion is below it.
-fn sink_dp(prep: &PreparedSpectrum, edges: &[Edge], p: i32, cut: Option<i32>) -> Option<SinkDist> {
+///
+/// Reachability, the structural support `[lo, hi]` and the best completion `rem` are integer
+/// min/max recurrences, so the order their candidates are combined in does not matter; they are
+/// evaluated in blocks of `min nom` vertices (no edge spans less, so a block only reads finished
+/// vertices), label by label over contiguous slices, which vectorises. The score convolution adds
+/// into each cell in alphabet order exactly as the recurrence is written, so its f64 sums are
+/// unchanged.
+#[inline(always)]
+fn sink_dp(
+    prep: &PreparedSpectrum,
+    edges: &[Edge],
+    p: i32,
+    stride: usize,
+    cut: Option<i32>,
+    detail: bool,
+    s: &mut Scratch,
+) -> Option<SinkDist> {
     let pu = p as usize;
     let na = edges.len();
-    // Vertex weights (index = suffix nominal mass) and anchor masses.
-    let mut v = vec![0i32; pu + 1];
+    // The edge into the sink scores 0: patch the sink's column, restored before returning.
+    s.saved.clear();
+    for a in 0..na {
+        let x = std::mem::replace(&mut s.e[a * stride + pu], 0);
+        s.saved.push(x);
+    }
+    let out = sink_dp_inner(prep, edges, p, stride, cut, detail, s);
+    for a in 0..na {
+        s.e[a * stride + pu] = s.saved[a];
+    }
+    out
+}
+
+#[inline(always)]
+fn sink_dp_inner(
+    prep: &PreparedSpectrum,
+    edges: &[Edge],
+    p: i32,
+    stride: usize,
+    cut: Option<i32>,
+    detail: bool,
+    s: &mut Scratch,
+) -> Option<SinkDist> {
+    let pu = p as usize;
+    let Scratch {
+        e,
+        v,
+        reach,
+        lo,
+        hi,
+        rem,
+        rows,
+        arena,
+        ..
+    } = s;
+    let e = &e[..];
+    // Vertex weights (index = suffix nominal mass); v[0] = v[p] = 0.
+    v.clear();
+    v.resize(pu + 1, 0);
     for m in 1..pu {
         v[m] = prep.vertex(p, p - m as i32);
     }
-    let alpha: Vec<f32> = (0..=p).map(|k| prep.alpha(k)).collect();
-    // Edge scores e[m * na + a] (into m, label a); valid when m >= nom_a.
-    let mut e = vec![0i32; (pu + 1) * na];
-    for m in 1..pu {
-        for (a, ed) in edges.iter().enumerate() {
-            if m >= ed.nom {
-                let mp = m - ed.nom;
-                let mut s = prep.edge_between(alpha[m], alpha[mp], ed.mass);
-                if mp == 0 {
-                    s += ed.term;
-                }
-                e[m * na + a] = s;
-            }
-        }
-    }
-    // Forward: reachability and structural support [lo, hi].
-    let mut reach = vec![false; pu + 1];
-    let mut lo = vec![i32::MAX; pu + 1];
-    let mut hi = vec![i32::MIN; pu + 1];
-    reach[0] = true;
+    let v = &v[..];
+    let bs = edges.iter().map(|ed| ed.nom).min().unwrap_or(1).max(1);
+
+    // Forward: reachability (mask 0 / -1) and structural support [lo, hi].
+    reach.clear();
+    reach.resize(pu + 1, 0);
+    lo.clear();
+    lo.resize(pu + 1, i32::MAX);
+    hi.clear();
+    hi.resize(pu + 1, i32::MIN);
+    reach[0] = -1;
     lo[0] = 0;
     hi[0] = 0;
-    for m in 1..=pu {
+    let mut b0 = 1usize;
+    while b0 <= pu {
+        let b1 = (b0 + bs).min(pu + 1);
+        let (r_src, r_dst) = reach.split_at_mut(b0);
+        let (l_src, l_dst) = lo.split_at_mut(b0);
+        let (h_src, h_dst) = hi.split_at_mut(b0);
         for (a, ed) in edges.iter().enumerate() {
-            if m >= ed.nom && reach[m - ed.nom] {
-                let mp = m - ed.nom;
-                let sh = v[m] + e[m * na + a];
-                reach[m] = true;
-                lo[m] = lo[m].min(lo[mp] + sh);
-                hi[m] = hi[m].max(hi[mp] + sh);
+            let nom = ed.nom;
+            let from = b0.max(nom);
+            if from >= b1 {
+                continue;
+            }
+            let n = b1 - from;
+            let (s0, d0) = (from - nom, from - b0);
+            let rs = &r_src[s0..s0 + n];
+            let ls = &l_src[s0..s0 + n];
+            let hs = &h_src[s0..s0 + n];
+            let rd = &mut r_dst[d0..d0 + n];
+            let ld = &mut l_dst[d0..d0 + n];
+            let hd = &mut h_dst[d0..d0 + n];
+            let vv = &v[from..b1];
+            let ee = &e[a * stride + from..a * stride + b1];
+            for i in 0..n {
+                let r = rs[i];
+                let sh = vv[i].wrapping_add(ee[i]);
+                let nl = ld[i].min(ls[i].wrapping_add(sh));
+                let nh = hd[i].max(hs[i].wrapping_add(sh));
+                ld[i] = (nl & r) | (ld[i] & !r);
+                hd[i] = (nh & r) | (hd[i] & !r);
+                rd[i] |= r;
             }
         }
+        b0 = b1;
     }
-    if !reach[pu] {
+    if reach[pu] == 0 {
         return None;
     }
-    // Backward: best completion to the sink.
-    let mut rem = vec![i32::MIN; pu + 1];
+    // Backward: best completion to the sink (i32::MIN = cannot reach it).
+    rem.clear();
+    rem.resize(pu + 1, i32::MIN);
     rem[pu] = 0;
-    for m in (0..pu).rev() {
-        if !reach[m] {
-            continue;
-        }
+    let mut b1 = pu; // blocks [b0, b1), top down
+    while b1 > 0 {
+        let b0 = b1.saturating_sub(bs);
+        let (r_dst, r_src) = rem.split_at_mut(b1);
+        let r_dst = &mut r_dst[b0..];
         for (a, ed) in edges.iter().enumerate() {
-            let to = m + ed.nom;
-            if to <= pu && rem[to] != i32::MIN {
-                let cand = v[to] + e[to * na + a] + rem[to];
-                if cand > rem[m] {
-                    rem[m] = cand;
-                }
+            let nom = ed.nom;
+            if nom > pu {
+                continue;
+            }
+            let end = b1.min(pu - nom + 1);
+            if b0 >= end {
+                continue;
+            }
+            let n = end - b0;
+            // m in [b0, end) reads to = m + nom in [b0 + nom, end + nom), all >= b1.
+            let t0 = b0 + nom;
+            let rs = &r_src[t0 - b1..t0 - b1 + n];
+            let vv = &v[t0..t0 + n];
+            let ee = &e[a * stride + t0..a * stride + t0 + n];
+            let rd = &mut r_dst[..n];
+            for i in 0..n {
+                let rt = rs[i];
+                let cand = vv[i].wrapping_add(ee[i]).wrapping_add(rt);
+                let take = (rt != i32::MIN) & (cand > rd[i]);
+                rd[i] = if take { cand } else { rd[i] };
             }
         }
+        for (r, &ok) in r_dst.iter_mut().zip(&reach[b0..b1]) {
+            if ok == 0 {
+                *r = i32::MIN;
+            }
+        }
+        b1 = b0;
     }
     let best = hi[pu];
     let cut = cut.map(|c| c.min(best));
-    // Stored range per vertex.
-    let mut low = vec![0i32; pu + 1];
-    let mut start = vec![0usize; pu + 2];
+    // Stored range per vertex: (arena start, length, lowest score).
+    rows.clear();
     let mut total = 0usize;
     for m in 0..=pu {
-        start[m] = total;
-        if reach[m] && rem[m] != i32::MIN {
+        let mut row = (total, 0usize, 0i32);
+        if reach[m] != 0 && rem[m] != i32::MIN {
             let l = match cut {
                 Some(c) => lo[m].max(c - rem[m]),
                 None => lo[m],
             };
-            low[m] = l;
+            row.2 = l;
             if hi[m] >= l {
-                total += (hi[m] - l + 1) as usize;
+                row.1 = (hi[m] - l + 1) as usize;
+                total += row.1;
             }
         }
+        rows.push(row);
     }
-    start[pu + 1] = total;
-    let mut arena = vec![0f64; total];
+    // The arena only grows; every row is zeroed right before it is accumulated into.
+    if arena.len() < total {
+        arena.resize(total, 0.0);
+    }
     arena[0] = 1.0; // D_0 = {0: 1}; low[0] = 0 always (the cut never exceeds the best path).
     for m in 1..=pu {
-        let (ms, me) = (start[m], start[m + 1]);
-        if ms == me {
+        let (ms, ml, lm) = rows[m];
+        if ml == 0 {
             continue;
         }
-        let lm = low[m];
+        let (head, tail) = arena.split_at_mut(ms);
+        let dst = &mut tail[..ml];
+        dst.fill(0.0);
         for (a, ed) in edges.iter().enumerate() {
             if m < ed.nom {
                 continue;
             }
-            let mp = m - ed.nom;
-            let (ps, pe) = (start[mp], start[mp + 1]);
-            if ps == pe {
+            let (ps, pl, lp) = rows[m - ed.nom];
+            if pl == 0 {
                 continue;
             }
-            let sh = v[m] + e[m * na + a];
-            // Source cell i (score low[mp] + i) lands at target index low[mp] + i + sh - lm.
-            let base = low[mp] + sh - lm;
-            let skip = if base < 0 { (-base) as usize } else { 0 };
-            let w = ed.prob;
-            let (head, tail) = arena.split_at_mut(ms);
-            let src = &head[ps..pe];
-            let dst = &mut tail[..me - ms];
-            if skip >= src.len() {
-                continue;
-            }
-            let off = (base + skip as i32) as usize;
-            for (d, s) in dst[off..].iter_mut().zip(&src[skip..]) {
-                *d += w * s;
+            let sh = v[m] + e[a * stride + m];
+            // Source cell i (score lp + i) lands at target index lp + i + sh - lm.
+            let base = lp + sh - lm;
+            let src = &head[ps..ps + pl];
+            if base < 0 {
+                let skip = (-base) as usize;
+                if skip < pl {
+                    axpy(dst, &src[skip..], ed.prob);
+                }
+            } else {
+                let off = base as usize;
+                if off < ml {
+                    axpy(&mut dst[off..], src, ed.prob);
+                }
             }
         }
     }
-    let cells = arena[start[pu]..start[pu + 1]].to_vec();
+    let (ps, pl, low_p) = rows[pu];
+    let cells = arena[ps..ps + pl].to_vec();
     Some(SinkDist {
-        low: low[pu],
+        low: low_p,
         cells,
         best,
-        vertex: v,
+        vertex: if detail { v.to_vec() } else { Vec::new() },
     })
 }
